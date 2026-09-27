@@ -99,7 +99,11 @@ def detectar_falla_continua(row, mes_actual_num=9):
 # ==========================================
 # 4. PESTAÑAS
 # ==========================================
-tab_dash, tab_carga, tab_diagnostico = st.tabs(["🗺️ Dashboard Ejecutivo", "⚙️ Administrador (Carga de Datos)", "🔍 Diagnóstico"])
+tab_dash, tab_carga, tab_verificacion = st.tabs([
+    "🗺️ Dashboard Ejecutivo", 
+    "⚙️ Administrador (Carga de Datos)", 
+    "✅ Verificación de Datos (Solo para verificar)"
+])
 
 with tab_carga:
     st.header("Actualización de Base de Datos Institucional")
@@ -131,7 +135,7 @@ with tab_carga:
                 df['Alerta_Critica_3M'] = df.apply(lambda row: detectar_falla_continua(row, 9), axis=1)
                 
                 # =====================================================
-                # CLASIFICACIÓN DE REGIONES (CORREGIDA)
+                # CLASIFICACIÓN POR UNIDAD EJECUTORA
                 # =====================================================
                 def definir_region_filtro(row):
                     reg = str(row.get('Departamento Nombre UBIGEO', '')).upper()
@@ -141,78 +145,98 @@ with tab_carga:
                     cc_resp = str(row.get('CC Responsable', '')).upper()
                     cc = str(row.get('Centro de Costo', '')).upper()
                     
-                    # 1. CARPETA FISCAL (incluye MULTIDEPARTAMENTAL)
-                    if ('CARPETA FISCAL' in reg or 'CARPETA FISCAL' in ue or 
-                        'CARPETA FISCAL' in cc or 'CARPETA FISCAL' in cc_resp or
-                        'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue):
+                    # 1. CARPETA FISCAL ELECTRÓNICA (Unidad Ejecutora 001727)
+                    # Todo lo que sea de esta UE se agrupa en un solo filtro
+                    if ('CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 
+                        'CARPETA FISCAL' in cc_resp or 'CARPETA FISCAL' in reg or
+                        'CARPETA FISCAL ELECTRONICA' in ue):
                         return 'CARPETA FISCAL'
                     
-                    # 2. Callao
-                    elif reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
-                        return 'CALLAO'
+                    # 2. IML - INSTITUTO DE MEDICINA LEGAL (Unidad Ejecutora independiente)
+                    # Tiene sedes en todos los departamentos pero es UN SOLO filtro
+                    if ('MEDICINA LEGAL' in ue or 'IML' in ue or 
+                        'INSTITUTO DE MEDICINA LEGAL' in ue):
+                        return 'IML (MEDICINA LEGAL)'
                     
-                    # 3. Lima
-                    elif 'LIMA' in reg:
-                        if 'MEDICINA LEGAL' in ue: return 'LIMA (IML)'
-                        elif 'AUTORIDAD NACIONAL' in ue: return 'LIMA (ANC)'
-                        else: return 'LIMA (GERENCIA GENERAL)'
+                    # 3. ANC - AUTORIDAD NACIONAL DE CONTROL (Unidad Ejecutora independiente)
+                    if ('AUTORIDAD NACIONAL' in ue or 'ANC' in ue):
+                        return 'ANC (AUTORIDAD NACIONAL)'
                     
-                    # 4. SULLANA (PRIORIDAD ALTA - antes que Piura)
-                    elif ('SULLANA' in prov or 'SULLANA' in dist or 
-                          'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
+                    # 4. SULLANA (antes que Piura)
+                    if ('SULLANA' in prov or 'SULLANA' in dist or 
+                        'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
                         return 'SULLANA'
                     
                     # 5. PIURA (solo si no es Sullana)
-                    elif 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
+                    if 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
                         return 'PIURA'
                     
-                    else:
-                        return reg
+                    # 6. Callao
+                    if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
+                        return 'CALLAO'
+                    
+                    # 7. Resto de departamentos (incluye Lima como cualquier otro)
+                    return reg
                 
                 df['Region_Filtro'] = df.apply(definir_region_filtro, axis=1)
-                
-                # Diagnóstico: mostrar cuántos registros tiene cada región
-                conteo = df['Region_Filtro'].value_counts()
-                st.write("**Regiones detectadas después de la clasificación:**")
-                st.dataframe(conteo.reset_index().rename(columns={'index': 'Región', 'Region_Filtro': 'Cantidad'}), use_container_width=True)
                 
                 df.to_parquet(CACHE_FILE, index=False)
                 st.success(f"✅ ¡Éxito! Se guardaron {len(df)} registros de {len(archivos_subidos)} archivos.")
         else:
             st.warning("⚠️ Debes seleccionar al menos un archivo Excel.")
 
-with tab_diagnostico:
-    st.header("🔍 Diagnóstico de Datos")
+with tab_verificacion:
+    st.header("✅ Verificación de Datos (Solo para verificar)")
+    st.info("Esta pestaña es **solo para verificar** que los datos se cargaron correctamente: cuántos registros hay, qué regiones se detectaron y de qué archivo proviene cada uno. No afecta al Dashboard.")
+    
     df_diag = obtener_base_datos()
     if df_diag is None:
-        st.warning("⚠️ No hay datos cargados.")
+        st.warning("⚠️ No hay datos cargados. Sube los archivos en la pestaña 'Administrador'.")
     else:
-        st.subheader("📋 Regiones Detectadas")
+        st.subheader("📋 Regiones Detectadas (Verificación)")
         regiones = df_diag['Region_Filtro'].value_counts().reset_index()
-        regiones.columns = ['Region_Filtro', 'Cantidad']
+        regiones.columns = ['Region_Filtro', 'Cantidad de Registros']
         st.dataframe(regiones, use_container_width=True)
         
-        st.subheader("🔎 ¿Existe SULLANA en los datos?")
-        if st.button("Buscar SULLANA"):
-            df_sullana = df_diag[
-                df_diag.apply(lambda row: 'SULLANA' in ' '.join([str(v).upper() for v in row.values if pd.notna(v)]), axis=1)
-            ]
-            if len(df_sullana) > 0:
-                st.success(f"✅ Se encontraron {len(df_sullana)} registros con 'SULLANA'.")
-                cols_show = [c for c in ['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Provincia Nombre UBIGEO', 'Distrito Nombre UBIGEO', 'Region_Filtro'] if c in df_sullana.columns]
-                st.dataframe(df_sullana[cols_show].head(20), use_container_width=True)
-            else:
-                st.error("❌ NO existe 'SULLANA' en los datos cargados.")
+        st.subheader("📁 Archivos Cargados (Verificación)")
+        if 'Archivo_Origen' in df_diag.columns:
+            archivos = df_diag['Archivo_Origen'].value_counts().reset_index()
+            archivos.columns = ['Archivo', 'Cantidad de Registros']
+            st.dataframe(archivos, use_container_width=True)
+        else:
+            st.warning("No se encontró la columna 'Archivo_Origen'. Vuelve a cargar los archivos.")
         
-        st.subheader("🔎 Registros clasificados como SULLANA")
-        if 'Region_Filtro' in df_diag.columns:
-            df_s = df_diag[df_diag['Region_Filtro'] == 'SULLANA']
-            if len(df_s) > 0:
-                st.success(f"✅ Hay {len(df_s)} registros clasificados como SULLANA.")
-                cols_show = [c for c in ['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Provincia Nombre UBIGEO', 'Region_Filtro'] if c in df_s.columns]
-                st.dataframe(df_s[cols_show].head(20), use_container_width=True)
-            else:
-                st.warning("⚠️ No hay registros clasificados como SULLANA. Revisa la clasificación.")
+        st.subheader("🔎 Búsqueda Específica (Verificación)")
+        
+        col_b1, col_b2, col_b3 = st.columns(3)
+        
+        with col_b1:
+            if st.button("Buscar SULLANA"):
+                df_s = df_diag[df_diag.apply(lambda row: 'SULLANA' in ' '.join([str(v).upper() for v in row.values if pd.notna(v)]), axis=1)]
+                if len(df_s) > 0:
+                    st.success(f"✅ {len(df_s)} registros con 'SULLANA'")
+                    cols_show = [c for c in ['Archivo_Origen', 'UE', 'CC Responsable', 'Region_Filtro'] if c in df_s.columns]
+                    st.dataframe(df_s[cols_show].head(20), use_container_width=True)
+                else:
+                    st.error("❌ No hay registros con 'SULLANA'")
+        
+        with col_b2:
+            if st.button("Buscar CARPETA FISCAL"):
+                df_cf = df_diag[df_diag['Region_Filtro'] == 'CARPETA FISCAL']
+                if len(df_cf) > 0:
+                    st.success(f"✅ {len(df_cf)} registros en CARPETA FISCAL")
+                    st.dataframe(df_cf[['Archivo_Origen', 'UE', 'CC Responsable']].head(20), use_container_width=True)
+                else:
+                    st.error("❌ No hay registros en CARPETA FISCAL")
+        
+        with col_b3:
+            if st.button("Buscar IML"):
+                df_iml = df_diag[df_diag['Region_Filtro'] == 'IML (MEDICINA LEGAL)']
+                if len(df_iml) > 0:
+                    st.success(f"✅ {len(df_iml)} registros en IML")
+                    st.dataframe(df_iml[['Archivo_Origen', 'UE', 'CC Responsable', 'Departamento Nombre UBIGEO']].head(20), use_container_width=True)
+                else:
+                    st.error("❌ No hay registros en IML")
 
 with tab_dash:
     fecha_actual = datetime.datetime.now().strftime('%d/%m/%Y')
@@ -226,14 +250,50 @@ with tab_dash:
         st.success(f"📂 **Base de Datos Activa:** {len(df_cargado):,} registros.")
 
         df_base = df_cargado.copy()
-        df_base['Region_Filtro'] = df_base['Region_Filtro'].replace('MULTIDEPARTAMENTAL', 'CARPETA FISCAL')
         
-        # FORZAR separación de Sullana si aún está dentro de PIURA
-        # Si hay registros con "SULLANA" en alguna columna pero clasificados como PIURA, reclasificar
-        mask_sullana = df_base.apply(
-            lambda row: 'SULLANA' in ' '.join([str(v).upper() for v in row.values if pd.notna(v)]), axis=1
-        )
-        df_base.loc[mask_sullana, 'Region_Filtro'] = 'SULLANA'
+        # =========================================================
+        # FORZAR RECLASIFICACIÓN EN DATOS VIEJOS
+        # =========================================================
+        def reclasificar(row):
+            reg = str(row.get('Departamento Nombre UBIGEO', '')).upper()
+            prov = str(row.get('Provincia Nombre UBIGEO', '')).upper()
+            dist = str(row.get('Distrito Nombre UBIGEO', '')).upper()
+            ue = str(row.get('UE', '')).upper()
+            cc_resp = str(row.get('CC Responsable', '')).upper()
+            cc = str(row.get('Centro de Costo', '')).upper()
+            
+            # 1. CARPETA FISCAL ELECTRÓNICA
+            if ('CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 
+                'CARPETA FISCAL' in cc_resp or 'CARPETA FISCAL' in reg or
+                'CARPETA FISCAL ELECTRONICA' in ue):
+                return 'CARPETA FISCAL'
+            
+            # 2. IML - INSTITUTO DE MEDICINA LEGAL
+            if ('MEDICINA LEGAL' in ue or 'IML' in ue or 
+                'INSTITUTO DE MEDICINA LEGAL' in ue):
+                return 'IML (MEDICINA LEGAL)'
+            
+            # 3. ANC - AUTORIDAD NACIONAL DE CONTROL
+            if ('AUTORIDAD NACIONAL' in ue or 'ANC' in ue):
+                return 'ANC (AUTORIDAD NACIONAL)'
+            
+            # 4. SULLANA
+            if ('SULLANA' in prov or 'SULLANA' in dist or 
+                'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
+                return 'SULLANA'
+            
+            # 5. PIURA
+            if 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
+                return 'PIURA'
+            
+            # 6. Callao
+            if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
+                return 'CALLAO'
+            
+            # 7. Resto
+            return reg
+        
+        df_base['Region_Filtro'] = df_base.apply(reclasificar, axis=1)
         
         col_filtro1, col_filtro2 = st.columns(2)
         meses_dict = {"Enero": "01", "Febrero": "02", "Marzo": "03", "Abril": "04", 
@@ -297,6 +357,12 @@ with tab_dash:
             df_mapa = df_base.groupby(['Departamento Nombre UBIGEO', 'UE', 'Region_Filtro']).agg({'Avance_Para_Promedio': 'mean'}).reset_index()
             df_mapa.rename(columns={'Avance_Para_Promedio': 'Avance_%'}, inplace=True)
             
+            # Para regiones que abarcan varios departamentos (CARPETA FISCAL, IML, ANC),
+            # agrupar en un solo punto
+            df_mapa = df_mapa.groupby('Region_Filtro').agg({
+                'Avance_%': 'mean'
+            }).reset_index()
+            
             coordenadas_peru = {
                 'AMAZONAS': [-6.2316, -77.8690], 'ANCASH': [-9.5277, -77.5287], 'APURIMAC': [-14.0504, -72.9553], 
                 'AREQUIPA': [-15.8402, -72.2530], 'AYACUCHO': [-13.1587, -74.2239], 'CAJAMARCA': [-6.2294, -78.4727],
@@ -308,36 +374,29 @@ with tab_dash:
                 'TUMBES': [-3.5669, -80.4515], 'UCAYALI': [-8.3791, -74.5539]
             }
 
-            def obtener_lat(row):
-                reg = row['Region_Filtro']
-                if 'LIMA (IML)' in reg: return -11.60
-                elif 'LIMA (ANC)' in reg: return -11.95
-                elif 'LIMA (GERENCIA GENERAL)' in reg: return -12.05
-                elif 'CALLAO' in reg: return -12.06
+            def obtener_lat(reg):
+                if 'CARPETA FISCAL' in reg: return -12.04
+                elif 'IML' in reg: return -12.08
+                elif 'ANC' in reg: return -12.12
                 elif 'SULLANA' in reg: return -4.90
                 elif 'PIURA' in reg: return -5.19
-                elif 'CARPETA FISCAL' in reg: return -12.04
-                else: return coordenadas_peru.get(str(row['Departamento Nombre UBIGEO']).upper(), [0, 0])[0]
+                elif 'CALLAO' in reg: return -12.06
+                elif 'LIMA' in reg: return -12.05
+                else: return coordenadas_peru.get(reg, [0, 0])[0]
 
-            def obtener_lon(row):
-                reg = row['Region_Filtro']
-                if 'LIMA (IML)' in reg: return -76.60
-                elif 'LIMA (ANC)' in reg: return -76.30
-                elif 'LIMA (GERENCIA GENERAL)' in reg: return -76.90
-                elif 'CALLAO' in reg: return -77.15
+            def obtener_lon(reg):
+                if 'CARPETA FISCAL' in reg: return -77.03
+                elif 'IML' in reg: return -76.95
+                elif 'ANC' in reg: return -77.10
                 elif 'SULLANA' in reg: return -80.68
                 elif 'PIURA' in reg: return -80.63
-                elif 'CARPETA FISCAL' in reg: return -77.03
-                else: return coordenadas_peru.get(str(row['Departamento Nombre UBIGEO']).upper(), [0, 0])[1]
+                elif 'CALLAO' in reg: return -77.15
+                elif 'LIMA' in reg: return -76.90
+                else: return coordenadas_peru.get(reg, [0, 0])[1]
 
-            def limpiar_nombre(reg_filtro):
-                if 'LIMA (' in reg_filtro:
-                    return reg_filtro.replace('LIMA (', '').replace(')', '')
-                return reg_filtro
-
-            df_mapa['Latitud'] = df_mapa.apply(obtener_lat, axis=1)
-            df_mapa['Longitud'] = df_mapa.apply(obtener_lon, axis=1)
-            df_mapa['Texto_Region'] = df_mapa['Region_Filtro'].apply(limpiar_nombre)
+            df_mapa['Latitud'] = df_mapa['Region_Filtro'].apply(obtener_lat)
+            df_mapa['Longitud'] = df_mapa['Region_Filtro'].apply(obtener_lon)
+            df_mapa['Texto_Region'] = df_mapa['Region_Filtro']
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
             config_mapa = {'scrollZoom': False, 'doubleClick': False, 'displayModeBar': False}
@@ -346,7 +405,7 @@ with tab_dash:
                 fig = px.scatter_map(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Region_Filtro", 
-                    hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
+                    hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
                     zoom=4.6, center={"lat": -9.3, "lon": -75.0}
                 )
@@ -356,7 +415,7 @@ with tab_dash:
                 fig = px.scatter_mapbox(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Region_Filtro", 
-                    hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
+                    hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
                     zoom=4.6, center={"lat": -9.3, "lon": -75.0}
                 )
@@ -378,6 +437,13 @@ with tab_dash:
             st.markdown(f"<h2 style='color: #0A192F; font-size: 32px; font-weight: 800; margin-bottom: 20px;'>🔍 Detalle Operativo: {region}</h2>", unsafe_allow_html=True)
             
             df_region = df_base[df_base['Region_Filtro'] == region]
+            
+            # Para IML y CARPETA FISCAL, mostrar filtro por departamento primero
+            if region in ['IML (MEDICINA LEGAL)', 'CARPETA FISCAL']:
+                deptos = ["Todos"] + sorted(list(df_region['Departamento Nombre UBIGEO'].unique()))
+                depto_sel = st.selectbox("Filtrar por Departamento:", deptos)
+                if depto_sel != "Todos":
+                    df_region = df_region[df_region['Departamento Nombre UBIGEO'] == depto_sel]
             
             ues = ["Todas"] + list(df_region['UE'].unique())
             ue_sel = st.selectbox("Filtrar por Unidad Ejecutora:", ues)
