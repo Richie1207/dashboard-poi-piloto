@@ -7,6 +7,15 @@ import os
 import base64
 
 # ==========================================
+# 0. PARCHE DE COMPATIBILIDAD (STREAMLIT CLOUD)
+# Evita el AttributeError entre Pandas moderno y Plotly
+# ==========================================
+if not hasattr(pd.DataFrame, 'iteritems'):
+    pd.DataFrame.iteritems = pd.DataFrame.items
+if not hasattr(pd.Series, 'iteritems'):
+    pd.Series.iteritems = pd.Series.items
+
+# ==========================================
 # 1. CONFIGURACIÓN INICIAL
 # ==========================================
 st.set_page_config(page_title="Dashboard Físico POI", layout="wide", initial_sidebar_state="collapsed")
@@ -255,13 +264,13 @@ with tab_dash:
             
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
-            # MAPA AUMENTADO: Zoom ajustado a 4.6 y altura incrementada a 850px para aprovechar toda la pantalla
+            # MAPA AUMENTADO: Zoom ajustado y tamaño limpio
             fig = px.scatter_mapbox(
                 df_mapa, lat="Latitud", lon="Longitud", 
                 text="Texto_Region", hover_name="Region_Filtro", 
                 hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                 color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                size_max=16, zoom=4.6, center={"lat": -9.8, "lon": -74.5}
+                zoom=4.6, center={"lat": -9.8, "lon": -74.5}
             )
             
             fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
@@ -296,7 +305,6 @@ with tab_dash:
             df_region_completa = df_region[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
             
             st.markdown("### 🚨 Centros de Costo Críticos (Déficit y Sobre-ejecución)")
-            # TABLA EXPANDIDA: Altura ampliada a 400px
             st.dataframe(df_problemas_visual.reset_index(drop=True), use_container_width=True, height=400)
             
             st.markdown("### 📈 Seguimiento de Avance Mensual (%) por Centro de Costo")
@@ -329,7 +337,6 @@ with tab_dash:
                 else:
                     df_seguimiento[nombres_meses_cortos[i-1]] = "-"
 
-            # TABLA EXPANDIDA: Altura ampliada a 500px
             st.dataframe(df_seguimiento.reset_index(drop=True), use_container_width=True, height=500)
             
             with st.expander("Ver sabana completa de la región (Valores absolutos)"):
