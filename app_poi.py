@@ -19,6 +19,9 @@ if not hasattr(pd.Series, 'iteritems'):
 # ==========================================
 st.set_page_config(page_title="Dashboard Físico POI", layout="wide", initial_sidebar_state="collapsed")
 
+# Archivo físico en el servidor para persistencia absoluta ante recargas (F5)
+CACHE_FILE = "cache_poi_institucional.parquet"
+
 # ==========================================
 # 2. ENCABEZADO INSTITUCIONAL INTEGRADO
 # ==========================================
@@ -58,12 +61,19 @@ st.write("")
 st.divider()
 
 # ==========================================
-# 3. VARIABLES DE SESIÓN (ESTADO PERSISTENTE)
+# 3. GESTIÓN DE PERSISTENCIA (DISCO Y SESIÓN)
 # ==========================================
-if 'df_poi' not in st.session_state:
-    st.session_state.df_poi = None
 if 'region_seleccionada' not in st.session_state:
     st.session_state.region_seleccionada = None
+
+# Función para cargar datos (Revisa memoria, y si no está, revisa el disco del servidor)
+def obtener_base_datos():
+    if os.path.exists(CACHE_FILE):
+        try:
+            return pd.read_parquet(CACHE_FILE)
+        except Exception:
+            return None
+    return None
 
 def evaluar_semaforo(prog, ejec):
     if prog == 0 and ejec == 0:
@@ -108,16 +118,15 @@ tab_dash, tab_carga = st.tabs(["🗺️ Dashboard Ejecutivo", "⚙️ Administra
 
 with tab_carga:
     st.header("Actualización de Base de Datos Institucional")
-    st.info("Arrastra y suelta todos los archivos 'Exporta POI' (.xlsx) de todas las Unidades Ejecutoras al mismo tiempo.")
+    st.info("Arrastra y suelta todos los archivos 'Exporta POI' (.xlsx) de todas las Unidades Ejecutoras al mismo tiempo. Los datos se guardarán de forma permanente en el servidor hasta que realices una nueva actualización.")
     
-    # Usamos un formulario para evitar que se reseteen los archivos o se pierda el estado al hacer clic
     with st.form("form_carga"):
         archivos_subidos = st.file_uploader("Subir archivos .xlsx", type=['xlsx'], accept_multiple_files=True)
-        submit_cargar = st.form_submit_button("Procesar Archivos", type="primary")
+        submit_cargar = st.form_submit_button("Procesar y Guardar Archivos", type="primary")
         
     if submit_cargar:
         if archivos_subidos:
-            with st.spinner("Apilando bases de datos y calculando indicadores..."):
+            with st.spinner("Apilando bases de datos, calculando indicadores y guardando en servidor..."):
                 lista_dfs = []
                 for archivo in archivos_subidos:
                     df_temp = pd.read_excel(archivo)
@@ -151,9 +160,10 @@ with tab_carga:
                 
                 df['Region_Filtro'] = df.apply(definir_region_filtro, axis=1)
                 
-                # ASIGNACIÓN SEGURA A SESSION_STATE
-                st.session_state.df_poi = df
-                st.success(f"✅ ¡Éxito! Se consolidaron {len(df)} registros de {len(archivos_subidos)} archivos. Ya puedes ir a la pestaña 'Dashboard Ejecutivo'.")
+                # GUARDADO FÍSICO PERSISTENTE EN DISCO DEL SERVIDOR
+                df.to_parquet(CACHE_FILE, index=False)
+                
+                st.success(f"✅ ¡Éxito! Se consolidaron y guardaron permanentemente {len(df)} registros de {len(archivos_subidos)} archivos. Ya puedes actualizar la página con total seguridad.")
         else:
             st.warning("⚠️ Debes seleccionar al menos un archivo Excel antes de procesar.")
 
@@ -161,13 +171,14 @@ with tab_dash:
     fecha_actual = datetime.datetime.now().strftime('%d/%m/%Y')
     st.markdown(f"<div style='text-align: right; font-size: 15px; color: #666;'><b>Fecha de consulta:</b> {fecha_actual}</div>", unsafe_allow_html=True)
     
-    if st.session_state.df_poi is None:
-        st.warning("⚠️ No hay datos cargados. Por favor, sube los archivos XLSX en la pestaña 'Administrador (Carga de Datos)' para comenzar.")
+    df_cargado = obtener_base_datos()
+    
+    if df_cargado is None:
+        st.warning("⚠️ No se encontró una base de datos institucional activa en el servidor. Por favor, sube los archivos XLSX en la pestaña 'Administrador (Carga de Datos)' para inicializar el sistema.")
     else:
-        # Mostramos indicador de que los datos están retenidos de forma segura en memoria
-        st.success(f"📂 **Base de Datos Institucional Activa:** {len(st.session_state.df_poi):,} registros almacenados correctamente en la sesión.")
+        st.success(f"📂 **Base de Datos Institucional Activa (Persistente):** {len(df_cargado):,} registros cargados desde el servidor.")
 
-        df_base = st.session_state.df_poi.copy()
+        df_base = df_cargado.copy()
         
         col_filtro1, col_filtro2 = st.columns(2)
         meses_dict = {"Enero": "01", "Febrero": "02", "Marzo": "03", "Abril": "04", 
@@ -222,7 +233,7 @@ with tab_dash:
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
-            region_elegida = st.selectbox("🔎 **Ingrese a una región (o entidad de Lima) para ver el detalle de seus Centros de Costo:**", opciones_regiones)
+            region_elegida = st.selectbox("🔎 **Ingrese a una región (o entidad de Lima) para ver el detalle de sus Centros de Costo:**", opciones_regiones)
             
             if region_elegida != "-- Seleccione una región --":
                 st.session_state.region_seleccionada = region_elegida
