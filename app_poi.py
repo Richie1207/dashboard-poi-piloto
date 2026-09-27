@@ -148,8 +148,9 @@ with tab_carga:
                 
                 df['Region_Filtro'] = df.apply(definir_region_filtro, axis=1)
                 
+                # GUARDAMOS EN MEMORIA PERSISTENTE DE SESIÓN
                 st.session_state.df = df
-                st.success(f"✅ ¡Éxito! Se consolidaron {len(df)} registros de {len(archivos_subidos)} archivos. Ve a la pestaña Dashboard.")
+                st.success(f"✅ ¡Éxito! Se consolidaron {len(df)} registros de {len(archivos_subidos)} archivos. Los datos ya están listos en la pestaña Dashboard.")
 
 with tab_dash:
     fecha_actual = datetime.datetime.now().strftime('%d/%m/%Y')
@@ -158,6 +159,9 @@ with tab_dash:
     if st.session_state.df is None:
         st.warning("⚠️ Sube los archivos XLSX en la pestaña 'Administrador' para comenzar.")
     else:
+        # MENSAJE DE ESTADO: Indica cuántos registros activos hay cargados en la sesión
+        st.success(f"📂 **Base de Datos Activa:** {len(st.session_state.df):,} registros cargados en memoria.")
+
         df_base = st.session_state.df.copy()
         
         col_filtro1, col_filtro2 = st.columns(2)
@@ -262,9 +266,6 @@ with tab_dash:
             df_mapa['Texto_Region'] = df_mapa['Region_Filtro'].apply(limpiar_nombre)
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
-            # =========================================================
-            # MAPA BLINDADO CON LÍMITES GEOGRÁFICOS FIJOS EN PERÚ
-            # =========================================================
             try:
                 fig = px.scatter_map(
                     df_mapa, lat="Latitud", lon="Longitud", 
@@ -274,7 +275,6 @@ with tab_dash:
                     zoom=4.8, center={"lat": -9.3, "lon": -75.0}
                 )
                 fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
-                # Forzamos los límites de visualización (Bbox) para que nunca salga de Perú
                 fig.update_layout(
                     map_style="open-street-map", 
                     showlegend=False, 
