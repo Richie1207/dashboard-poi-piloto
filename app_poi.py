@@ -128,7 +128,7 @@ with tab_carga:
                 lista_dfs = []
                 for archivo in archivos_subidos:
                     df_temp = pd.read_excel(archivo)
-                    df_temp['Archivo_Origen'] = archivo.name  # Guardamos el nombre del archivo
+                    df_temp['Archivo_Origen'] = archivo.name
                     lista_dfs.append(df_temp)
                 
                 df = pd.concat(lista_dfs, ignore_index=True)
@@ -145,15 +145,21 @@ with tab_carga:
                 
                 # --- CLASIFICACIÓN EXACTA BASADA EN UBIGEO, UE Y CC RESPONSABLE ---
                 def definir_region_filtro(row):
-                    reg = str(row['Departamento Nombre UBIGEO']).upper()
-                    prov = str(row['Provincia Nombre UBIGEO']).upper()
-                    dist = str(row['Distrito Nombre UBIGEO']).upper()
-                    ue = str(row['UE']).upper()
+                    # Concatenar TODAS las columnas de texto para búsqueda exhaustiva
+                    texto_completo = ' '.join([str(v).upper() for v in row.values if pd.notna(v)])
+                    
+                    reg = str(row.get('Departamento Nombre UBIGEO', '')).upper()
+                    prov = str(row.get('Provincia Nombre UBIGEO', '')).upper()
+                    dist = str(row.get('Distrito Nombre UBIGEO', '')).upper()
+                    ue = str(row.get('UE', '')).upper()
                     cc_resp = str(row.get('CC Responsable', '')).upper()
                     cc = str(row.get('Centro de Costo', '')).upper()
                     
-                    # 1. Carpeta Fiscal / Multidepartamental
-                    if 'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue or 'CARPETA FISCAL' in reg or 'CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 'CARPETA FISCAL' in cc_resp:
+                    # 1. CARPETA FISCAL (incluye MULTIDEPARTAMENTAL, ya no como filtro separado)
+                    if ('CARPETA FISCAL' in texto_completo or 
+                        'MULTIDEPARTAMENTAL' in texto_completo or 
+                        'MULTIDEPARTAMENTAL' in reg or 
+                        'MULTIDEPARTAMENTAL' in ue):
                         return 'CARPETA FISCAL'
                     
                     # 2. Callao
@@ -166,8 +172,8 @@ with tab_carga:
                         elif 'AUTORIDAD NACIONAL' in ue: return 'LIMA (ANC)'
                         else: return 'LIMA (GERENCIA GENERAL)'
                     
-                    # 4. Sullana (se detecta por provincia, distrito, CC Responsable, UE o Centro de Costo)
-                    elif 'SULLANA' in prov or 'SULLANA' in dist or 'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc or 'SULLANA' in reg:
+                    # 4. Sullana (búsqueda exhaustiva en todas las columnas)
+                    elif 'SULLANA' in texto_completo or 'SULLANA' in prov or 'SULLANA' in dist or 'SULLANA' in cc_resp or 'SULLANA' in cc:
                         return 'SULLANA'
                     
                     # 5. Piura (solo si no es Sullana)
@@ -208,20 +214,15 @@ with tab_diagnostico:
         st.subheader("🔎 Buscar 'SULLANA' en los datos")
         if st.button("Buscar SULLANA"):
             df_sullana = df_diag[
-                df_diag.apply(lambda row: 'SULLANA' in str(row.get('Departamento Nombre UBIGEO', '')).upper() or
-                                         'SULLANA' in str(row.get('Provincia Nombre UBIGEO', '')).upper() or
-                                         'SULLANA' in str(row.get('Distrito Nombre UBIGEO', '')).upper() or
-                                         'SULLANA' in str(row.get('UE', '')).upper() or
-                                         'SULLANA' in str(row.get('CC Responsable', '')).upper() or
-                                         'SULLANA' in str(row.get('Centro de Costo', '')).upper() or
-                                         'SULLANA' in str(row.get('Actividad Operativa', '')).upper(), axis=1)
+                df_diag.apply(lambda row: 'SULLANA' in ' '.join([str(v).upper() for v in row.values if pd.notna(v)]), axis=1)
             ]
             if len(df_sullana) > 0:
                 st.success(f"✅ Se encontraron {len(df_sullana)} registros con 'SULLANA'.")
-                st.dataframe(df_sullana[['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Actividad Operativa', 'Region_Filtro']].head(20), use_container_width=True)
+                cols_mostrar = [c for c in ['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Actividad Operativa', 'Region_Filtro'] if c in df_sullana.columns]
+                st.dataframe(df_sullana[cols_mostrar].head(30), use_container_width=True)
             else:
-                st.error("❌ No se encontraron registros con 'SULLANA' en ninguna columna. Esto explica por qué Sullana no aparece en el mapa.")
-                st.info("💡 **Sugerencia**: Si Sullana tiene su propio archivo .xlsx, asegúrate de cargarlo junto con los demás. Si Sullana está dentro del archivo de Piura, necesitas proporcionar una lista de Centros de Costo o Unidades que pertenezcan a Sullana para poder separarlos.")
+                st.error("❌ No se encontraron registros con 'SULLANA' en ninguna columna.")
+                st.info("💡 **Conclusión**: Los datos de Sullana NO están etiquetados como 'SULLANA' en los archivos. Están mezclados con los de Piura bajo el mismo Centro de Costo. Para separarlos, se necesita información adicional (por ejemplo, una lista de Centros de Costo o Actividades Operativas que pertenezcan a Sullana).")
 
 with tab_dash:
     fecha_actual = datetime.datetime.now().strftime('%d/%m/%Y')
@@ -235,6 +236,11 @@ with tab_dash:
         st.success(f"📂 **Base de Datos Institucional Activa:** {len(df_cargado):,} registros cargados desde el servidor.")
 
         df_base = df_cargado.copy()
+        
+        # =========================================================
+        # EXCLUIR "MULTIDEPARTAMENTAL" SI AÚN EXISTE EN DATOS VIEJOS
+        # =========================================================
+        df_base['Region_Filtro'] = df_base['Region_Filtro'].replace('MULTIDEPARTAMENTAL', 'CARPETA FISCAL')
         
         col_filtro1, col_filtro2 = st.columns(2)
         meses_dict = {"Enero": "01", "Febrero": "02", "Marzo": "03", "Abril": "04", 
