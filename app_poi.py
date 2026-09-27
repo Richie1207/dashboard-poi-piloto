@@ -87,7 +87,6 @@ COORDENADAS_PERU = {
     'TACNA': [-18.0065, -70.2462],
     'TUMBES': [-3.5669, -80.4515],
     'UCAYALI': [-8.3791, -74.5539],
-    # Aliases
     'PROVINCIA CONSTITUCIONAL DEL CALLAO': [-12.0566, -77.1181],
     'PROV. CALLAO': [-12.0566, -77.1181],
     'MULTIDEPARTAMENTAL': [-12.0464, -77.0428],
@@ -128,6 +127,13 @@ def extraer_departamento_de_actividad(texto):
     for depto in deptos_ordenados:
         if depto in texto:
             return depto
+    return None
+
+def obtener_columna_ubigeo(df):
+    """Devuelve el nombre de la columna UBIGEO disponible en el DataFrame."""
+    for c in ['Ubigeo', 'UBIGEO', 'ubigeo', 'Código Ubigeo', 'Codigo Ubigeo']:
+        if c in df.columns:
+            return c
     return None
 
 # ==========================================
@@ -175,7 +181,7 @@ def detectar_falla_continua(row, mes_actual_num=9):
 tab_dash, tab_carga, tab_verificacion = st.tabs([
     "🗺️ Dashboard Ejecutivo", 
     "⚙️ Administrador (Carga de Datos)", 
-    "✅ Verificación de Datos (Solo para verificar)"
+    "✅ Verificación de Carga"
 ])
 
 with tab_carga:
@@ -257,25 +263,25 @@ with tab_carga:
             st.warning("⚠️ Debes seleccionar al menos un archivo Excel.")
 
 with tab_verificacion:
-    st.header("✅ Verificación de Datos (Solo para verificar)")
-    st.info("Esta pestaña es **solo para verificar** que los datos se cargaron correctamente.")
+    st.header("✅ Verificación de Carga de Archivos")
+    st.info("Aquí puedes comprobar que **todos los archivos se cargaron correctamente** en la base de datos.")
     
     df_diag = obtener_base_datos()
     if df_diag is None:
         st.warning("⚠️ No hay datos cargados. Sube los archivos en la pestaña 'Administrador'.")
     else:
-        st.subheader("📋 Regiones Detectadas (Verificación)")
+        st.subheader("📋 Regiones Detectadas")
         regiones = df_diag['Region_Filtro'].value_counts().reset_index()
         regiones.columns = ['Region_Filtro', 'Cantidad de Registros']
         st.dataframe(regiones, use_container_width=True)
         
-        st.subheader("🗺️ Departamentos Reales (Verificación)")
+        st.subheader("🗺️ Departamentos Reales Detectados")
         if 'Departamento_Real' in df_diag.columns:
             deptos = df_diag['Departamento_Real'].value_counts().reset_index()
             deptos.columns = ['Departamento_Real', 'Cantidad de Registros']
             st.dataframe(deptos, use_container_width=True)
         
-        st.subheader("🔍 Ver IML - Departamento extraído de Actividad Operativa")
+        st.subheader("🔍 Detalle IML (Departamento extraído de Actividad Operativa)")
         df_iml = df_diag[df_diag['Region_Filtro'] == 'IML (MEDICINA LEGAL)']
         if len(df_iml) > 0:
             cols_show = [c for c in ['Archivo_Origen', 'UE', 'Actividad Operativa', 'Departamento Nombre UBIGEO', 'Departamento_Real'] if c in df_iml.columns]
@@ -388,7 +394,7 @@ with tab_dash:
         """, unsafe_allow_html=True)
 
         # =========================================================
-        # MAPA NACIONAL (MÁS PEQUEÑO Y AJUSTADO)
+        # MAPA NACIONAL - VENTANA GRANDE, MAPA PEQUEÑO (TODO EL PERÚ DE UN VISTAZO)
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
@@ -439,22 +445,21 @@ with tab_dash:
 
             config_mapa = {'scrollZoom': False, 'doubleClick': False, 'displayModeBar': False}
 
-            # --- MAPA MÁS PEQUEÑO Y AJUSTADO ---
+            # --- VENTANA GRANDE (height=700) PERO MAPA AJUSTADO CON BOUNDS PARA VER TODO EL PERÚ ---
             try:
                 fig = px.scatter_map(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Texto_Region", 
                     hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Departamento_Real": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.2, center={"lat": -9.5, "lon": -75.0}
                 )
-                fig.update_traces(marker=dict(size=11, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
+                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     map_style="open-street-map", 
                     showlegend=False, 
-                    height=450, 
-                    margin={"r":0,"t":0,"l":0,"b":0}, 
-                    map_bounds={"west": -84.0, "east": -66.0, "south": -19.5, "north": 0.5}
+                    height=700,
+                    margin={"r":0,"t":0,"l":0,"b":0},
+                    map_bounds={"west": -84.5, "east": -65.5, "south": -19.5, "north": 0.5}
                 )
             except AttributeError:
                 fig = px.scatter_mapbox(
@@ -462,15 +467,14 @@ with tab_dash:
                     text="Texto_Region", hover_name="Texto_Region", 
                     hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Departamento_Real": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.2, center={"lat": -9.5, "lon": -75.0}
                 )
-                fig.update_traces(marker=dict(size=11, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
+                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     mapbox_style="open-street-map", 
                     showlegend=False, 
-                    height=450, 
-                    margin={"r":0,"t":0,"l":0,"b":0}, 
-                    mapbox_bounds={"west": -84.0, "east": -66.0, "south": -19.5, "north": 0.5}
+                    height=700,
+                    margin={"r":0,"t":0,"l":0,"b":0},
+                    mapbox_bounds={"west": -84.5, "east": -65.5, "south": -19.5, "north": 0.5}
                 )
             
             st.plotly_chart(fig, use_container_width=True, config=config_mapa)
@@ -500,9 +504,23 @@ with tab_dash:
             
             if ue_sel != "Todas":
                 df_region = df_region[df_region['UE'] == ue_sel]
-            
+
+            # --- Detectar columna UBIGEO disponible ---
+            col_ubigeo = obtener_columna_ubigeo(df_region)
+
             df_problemas = df_region[(df_region['Estado_Semaforo'].str.contains('Rojo')) | (df_region['Estado_Semaforo'].str.contains('Morado')) | (df_region['Alerta_Critica_3M'] == '🚨 SÍ')]
-            cols_mostrar = ['UE', 'Centro de Costo', 'Unidad de Medida', col_prog, col_ejec, 'Estado_Semaforo', 'Alerta_Critica_3M']
+            
+            # --- CONSTRUCCIÓN DE COLUMNAS CON UBIGEO ---
+            cols_mostrar = []
+            cols_mostrar.append('UE')
+            cols_mostrar.append('Centro de Costo')
+            if col_ubigeo:
+                cols_mostrar.append(col_ubigeo)
+            cols_mostrar.append('Unidad de Medida')
+            cols_mostrar.append(col_prog)
+            cols_mostrar.append(col_ejec)
+            cols_mostrar.append('Estado_Semaforo')
+            cols_mostrar.append('Alerta_Critica_3M')
             
             df_problemas_visual = df_problemas[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
             df_region_completa = df_region[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
@@ -513,21 +531,14 @@ with tab_dash:
             st.markdown("### 📈 Seguimiento de Avance Mensual (%)")
             
             nombres_meses_cortos = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-            df_seguimiento = df_region[['UE', 'Centro de Costo', 'Unidad de Medida']].copy()
             
-            # --- CAMBIO: Reemplazar "Actividad Operativa" por "UBIGEO" ---
-            if 'Ubigeo' in df_region.columns:
-                df_seguimiento.insert(0, 'UBIGEO', df_region['Ubigeo'].values)
-            elif 'UBIGEO' in df_region.columns:
-                df_seguimiento.insert(0, 'UBIGEO', df_region['UBIGEO'].values)
-            elif 'Departamento Nombre UBIGEO' in df_region.columns:
-                # Si no hay columna Ubigeo, mostrar el departamento como referencia
-                df_seguimiento.insert(0, 'Departamento', df_region['Departamento_Real'].values)
+            # --- CONSTRUCCIÓN DE LA TABLA DE SEGUIMIENTO CON UBIGEO ---
+            base_cols = ['UE', 'Centro de Costo']
+            if col_ubigeo:
+                base_cols.append(col_ubigeo)
+            base_cols.append('Unidad de Medida')
             
-            # Si es IML, mostrar también el departamento (sin la actividad operativa completa)
-            if region == 'IML (MEDICINA LEGAL)':
-                if 'Departamento' not in df_seguimiento.columns:
-                    df_seguimiento.insert(0, 'Departamento', df_region['Departamento_Real'].values)
+            df_seguimiento = df_region[base_cols].copy()
             
             for i in range(1, 13):
                 m_str = str(i).zfill(2)
