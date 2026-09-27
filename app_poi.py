@@ -263,32 +263,42 @@ with tab_dash:
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
             # =========================================================
-            # LÓGICA DE DIBUJO DE MAPA A PRUEBA DE FALLOS
-            # Detecta qué versión instaló Streamlit Cloud y dibuja el mapa
+            # MAPA BLINDADO CON LÍMITES GEOGRÁFICOS FIJOS EN PERÚ
             # =========================================================
             try:
-                # Intento 1: Servidor con Plotly Ultramoderno (v5.24.0+) usa MapLibre
                 fig = px.scatter_map(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Region_Filtro", 
                     hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.6, center={"lat": -9.8, "lon": -74.5}
+                    zoom=4.8, center={"lat": -9.3, "lon": -75.0}
                 )
                 fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
-                fig.update_layout(map_style="open-street-map", showlegend=False, height=850, margin={"r":0,"t":0,"l":0,"b":0})
+                # Forzamos los límites de visualización (Bbox) para que nunca salga de Perú
+                fig.update_layout(
+                    map_style="open-street-map", 
+                    showlegend=False, 
+                    height=850, 
+                    margin={"r":0,"t":0,"l":0,"b":0},
+                    map_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
+                )
             
             except AttributeError:
-                # Intento 2: Servidor con Plotly Clásico usa MapBox
                 fig = px.scatter_mapbox(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Region_Filtro", 
                     hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.6, center={"lat": -9.8, "lon": -74.5}
+                    zoom=4.8, center={"lat": -9.3, "lon": -75.0}
                 )
                 fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
-                fig.update_layout(mapbox_style="open-street-map", showlegend=False, height=850, margin={"r":0,"t":0,"l":0,"b":0})
+                fig.update_layout(
+                    mapbox_style="open-street-map", 
+                    showlegend=False, 
+                    height=850, 
+                    margin={"r":0,"t":0,"l":0,"b":0},
+                    mapbox_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
+                )
             
             st.plotly_chart(fig, use_container_width=True)
 
