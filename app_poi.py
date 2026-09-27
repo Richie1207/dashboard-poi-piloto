@@ -142,24 +142,30 @@ with tab_carga:
                 
                 df['Alerta_Critica_3M'] = df.apply(lambda row: detectar_falla_continua(row, 9), axis=1)
                 
-                # --- CLASIFICACIÓN INSTITUCIONAL PRECISA (DISTRITOS FISCALES Y CARPETA FISCAL) ---
+                # --- CLASIFICACIÓN EXACTA BASADA EN UBIGEO, UE Y CC RESPONSABLE ---
                 def definir_region_filtro(row):
                     reg = str(row['Departamento Nombre UBIGEO']).upper()
                     ue = str(row['UE']).upper()
+                    cc_resp = str(row.get('CC Responsable', '')).upper()
                     cc = str(row.get('Centro de Costo', '')).upper()
                     
-                    # Todo lo multidepartamental o de carpeta fiscal va estrictamente a Carpeta Fiscal
-                    if 'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue or 'CARPETA FISCAL' in reg or 'CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc:
+                    # 1. Carpeta Fiscal / Multidepartamental
+                    if 'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue or 'CARPETA FISCAL' in reg or 'CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 'CARPETA FISCAL' in cc_resp:
                         return 'CARPETA FISCAL'
+                    
+                    # 2. Callao
                     elif reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
                         return 'CALLAO'
+                    
+                    # 3. Lima y sus dependencias especiales
                     elif 'LIMA' in reg:
                         if 'MEDICINA LEGAL' in ue: return 'LIMA (IML)'
                         elif 'AUTORIDAD NACIONAL' in ue: return 'LIMA (ANC)'
                         else: return 'LIMA (GERENCIA GENERAL)'
+                    
+                    # 4. Piura y la separación estricta de Sullana mediante el CC Responsable o UE
                     elif 'PIURA' in reg or 'PIURA' in ue:
-                        # Identificar si pertenece al Distrito Fiscal / Sede de Sullana
-                        if 'SULLANA' in ue or 'SULLANA' in cc or 'SULLANA' in reg: 
+                        if 'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc or 'SULLANA' in reg: 
                             return 'SULLANA'
                         else: 
                             return 'PIURA'
