@@ -1,10 +1,18 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.graph_objects as go  # <-- CAMBIO DE MOTOR: Usamos la versión pura para evitar el bug de la nube
+import plotly.express as px
 import datetime
 import os
 import base64
+
+# ==========================================
+# 0. PARCHE DE COMPATIBILIDAD (STREAMLIT CLOUD)
+# ==========================================
+if not hasattr(pd.DataFrame, 'iteritems'):
+    pd.DataFrame.iteritems = pd.DataFrame.items
+if not hasattr(pd.Series, 'iteritems'):
+    pd.Series.iteritems = pd.Series.items
 
 # ==========================================
 # 1. CONFIGURACIÓN INICIAL
@@ -254,38 +262,33 @@ with tab_dash:
             df_mapa['Texto_Region'] = df_mapa['Region_Filtro'].apply(limpiar_nombre)
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
-            # NUEVO MOTOR DEL MAPA: Bypass a Plotly Express usando Graph Objects nativo
-            fig = go.Figure()
-            color_map = {'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'}
+            # =========================================================
+            # LÓGICA DE DIBUJO DE MAPA A PRUEBA DE FALLOS
+            # Detecta qué versión instaló Streamlit Cloud y dibuja el mapa
+            # =========================================================
+            try:
+                # Intento 1: Servidor con Plotly Ultramoderno (v5.24.0+) usa MapLibre
+                fig = px.scatter_map(
+                    df_mapa, lat="Latitud", lon="Longitud", 
+                    text="Texto_Region", hover_name="Region_Filtro", 
+                    hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
+                    color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
+                    zoom=4.6, center={"lat": -9.8, "lon": -74.5}
+                )
+                fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
+                fig.update_layout(map_style="open-street-map", showlegend=False, height=850, margin={"r":0,"t":0,"l":0,"b":0})
             
-            for color_key, hex_code in color_map.items():
-                df_sub = df_mapa[df_mapa['Color'] == color_key]
-                if not df_sub.empty:
-                    hover_text = df_sub.apply(lambda row: f"<b>{row['Region_Filtro']}</b><br>Avance: {row['Avance_%']:.1f}%", axis=1)
-                    
-                    fig.add_trace(go.Scattermapbox(
-                        lat=df_sub['Latitud'],
-                        lon=df_sub['Longitud'],
-                        mode='markers+text',
-                        marker=dict(size=14, color=hex_code, opacity=0.9),
-                        text=df_sub['Texto_Region'],
-                        textposition='top right',
-                        textfont=dict(size=13, color='black', family="Arial", weight="bold"),
-                        hoverinfo='text',
-                        hovertext=hover_text,
-                        name=color_key
-                    ))
-
-            fig.update_layout(
-                mapbox_style="open-street-map",
-                mapbox=dict(
-                    center=dict(lat=-9.8, lon=-74.5),
-                    zoom=4.6
-                ),
-                showlegend=False,
-                height=850,
-                margin={"r":0,"t":0,"l":0,"b":0}
-            )
+            except AttributeError:
+                # Intento 2: Servidor con Plotly Clásico usa MapBox
+                fig = px.scatter_mapbox(
+                    df_mapa, lat="Latitud", lon="Longitud", 
+                    text="Texto_Region", hover_name="Region_Filtro", 
+                    hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
+                    color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
+                    zoom=4.6, center={"lat": -9.8, "lon": -74.5}
+                )
+                fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
+                fig.update_layout(mapbox_style="open-street-map", showlegend=False, height=850, margin={"r":0,"t":0,"l":0,"b":0})
             
             st.plotly_chart(fig, use_container_width=True)
 
