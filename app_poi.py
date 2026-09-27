@@ -5,7 +5,6 @@ import plotly.express as px
 import datetime
 import os
 import base64
-import re
 
 # ==========================================
 # 0. PARCHE DE COMPATIBILIDAD
@@ -111,8 +110,11 @@ DEPARTAMENTOS_PERU = [
     'TUMBES', 'UCAYALI'
 ]
 
+# Regiones institucionales que se muestran como UN SOLO PUNTO en Lima
+REGIONES_CENTRALIZADAS = ['ANC (AUTORIDAD NACIONAL)', 'CARPETA FISCAL', 'IML (MEDICINA LEGAL)']
+
 # ==========================================
-# 4. FUNCIÓN PARA EXTRAER DEPARTAMENTO
+# 4. FUNCIONES AUXILIARES
 # ==========================================
 def extraer_departamento_de_actividad(texto):
     if pd.isna(texto):
@@ -131,7 +133,7 @@ def extraer_departamento_de_actividad(texto):
 
 def obtener_columna_ubigeo(df):
     """Devuelve el nombre de la columna UBIGEO disponible en el DataFrame."""
-    for c in ['Ubigeo', 'UBIGEO', 'ubigeo', 'Código Ubigeo', 'Codigo Ubigeo']:
+    for c in ['Ubigeo', 'UBIGEO', 'ubigeo', 'Código Ubigeo', 'Codigo Ubigeo', 'CODIGO UBIGEO']:
         if c in df.columns:
             return c
     return None
@@ -175,6 +177,38 @@ def detectar_falla_continua(row, mes_actual_num=9):
             return '🚨 SÍ'
     return 'NO'
 
+def reclasificar_row(row):
+    reg = str(row.get('Departamento Nombre UBIGEO', '')).upper().strip()
+    prov = str(row.get('Provincia Nombre UBIGEO', '')).upper().strip()
+    dist = str(row.get('Distrito Nombre UBIGEO', '')).upper().strip()
+    ue = str(row.get('UE', '')).upper().strip()
+    cc_resp = str(row.get('CC Responsable', '')).upper().strip()
+    cc = str(row.get('Centro de Costo', '')).upper().strip()
+
+    if ('CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 
+        'CARPETA FISCAL' in cc_resp or 'CARPETA FISCAL' in reg or
+        'CARPETA FISCAL ELECTRONICA' in ue):
+        return 'CARPETA FISCAL'
+
+    if ('MEDICINA LEGAL' in ue or 'IML' in ue or 
+        'INSTITUTO DE MEDICINA LEGAL' in ue):
+        return 'IML (MEDICINA LEGAL)'
+
+    if ('AUTORIDAD NACIONAL' in ue or 'ANC' in ue):
+        return 'ANC (AUTORIDAD NACIONAL)'
+
+    if ('SULLANA' in prov or 'SULLANA' in dist or 
+        'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
+        return 'SULLANA'
+
+    if 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
+        return 'PIURA'
+
+    if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
+        return 'CALLAO'
+
+    return reg
+
 # ==========================================
 # 6. PESTAÑAS
 # ==========================================
@@ -212,40 +246,7 @@ with tab_carga:
                         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
                 
                 df['Alerta_Critica_3M'] = df.apply(lambda row: detectar_falla_continua(row, 9), axis=1)
-                
-                def definir_region_filtro(row):
-                    reg = str(row.get('Departamento Nombre UBIGEO', '')).upper().strip()
-                    prov = str(row.get('Provincia Nombre UBIGEO', '')).upper().strip()
-                    dist = str(row.get('Distrito Nombre UBIGEO', '')).upper().strip()
-                    ue = str(row.get('UE', '')).upper().strip()
-                    cc_resp = str(row.get('CC Responsable', '')).upper().strip()
-                    cc = str(row.get('Centro de Costo', '')).upper().strip()
-                    
-                    if ('CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 
-                        'CARPETA FISCAL' in cc_resp or 'CARPETA FISCAL' in reg or
-                        'CARPETA FISCAL ELECTRONICA' in ue):
-                        return 'CARPETA FISCAL'
-                    
-                    if ('MEDICINA LEGAL' in ue or 'IML' in ue or 
-                        'INSTITUTO DE MEDICINA LEGAL' in ue):
-                        return 'IML (MEDICINA LEGAL)'
-                    
-                    if ('AUTORIDAD NACIONAL' in ue or 'ANC' in ue):
-                        return 'ANC (AUTORIDAD NACIONAL)'
-                    
-                    if ('SULLANA' in prov or 'SULLANA' in dist or 
-                        'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
-                        return 'SULLANA'
-                    
-                    if 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
-                        return 'PIURA'
-                    
-                    if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
-                        return 'CALLAO'
-                    
-                    return reg
-                
-                df['Region_Filtro'] = df.apply(definir_region_filtro, axis=1)
+                df['Region_Filtro'] = df.apply(reclasificar_row, axis=1)
                 
                 def obtener_departamento_real(row):
                     depto_original = str(row.get('Departamento Nombre UBIGEO', '')).upper().strip()
@@ -263,8 +264,8 @@ with tab_carga:
             st.warning("⚠️ Debes seleccionar al menos un archivo Excel.")
 
 with tab_verificacion:
-    st.header("✅ Verificación de Carga de Archivos")
-    st.info("Aquí puedes comprobar que **todos los archivos se cargaron correctamente** en la base de datos.")
+    st.header("✅ Verificación de Carga")
+    st.caption("Comprueba que todos los archivos se cargaron correctamente en la base de datos.")
     
     df_diag = obtener_base_datos()
     if df_diag is None:
@@ -301,40 +302,7 @@ with tab_dash:
         st.success(f"📂 **Base de Datos Activa:** {len(df_cargado):,} registros.")
 
         df_base = df_cargado.copy()
-        
-        def reclasificar(row):
-            reg = str(row.get('Departamento Nombre UBIGEO', '')).upper().strip()
-            prov = str(row.get('Provincia Nombre UBIGEO', '')).upper().strip()
-            dist = str(row.get('Distrito Nombre UBIGEO', '')).upper().strip()
-            ue = str(row.get('UE', '')).upper().strip()
-            cc_resp = str(row.get('CC Responsable', '')).upper().strip()
-            cc = str(row.get('Centro de Costo', '')).upper().strip()
-            
-            if ('CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 
-                'CARPETA FISCAL' in cc_resp or 'CARPETA FISCAL' in reg or
-                'CARPETA FISCAL ELECTRONICA' in ue):
-                return 'CARPETA FISCAL'
-            
-            if ('MEDICINA LEGAL' in ue or 'IML' in ue or 
-                'INSTITUTO DE MEDICINA LEGAL' in ue):
-                return 'IML (MEDICINA LEGAL)'
-            
-            if ('AUTORIDAD NACIONAL' in ue or 'ANC' in ue):
-                return 'ANC (AUTORIDAD NACIONAL)'
-            
-            if ('SULLANA' in prov or 'SULLANA' in dist or 
-                'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
-                return 'SULLANA'
-            
-            if 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
-                return 'PIURA'
-            
-            if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
-                return 'CALLAO'
-            
-            return reg
-        
-        df_base['Region_Filtro'] = df_base.apply(reclasificar, axis=1)
+        df_base['Region_Filtro'] = df_base.apply(reclasificar_row, axis=1)
         
         def obtener_departamento_real(row):
             depto_original = str(row.get('Departamento Nombre UBIGEO', '')).upper().strip()
@@ -394,7 +362,7 @@ with tab_dash:
         """, unsafe_allow_html=True)
 
         # =========================================================
-        # MAPA NACIONAL - VENTANA GRANDE, MAPA PEQUEÑO (TODO EL PERÚ DE UN VISTAZO)
+        # MAPA NACIONAL
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
@@ -405,12 +373,28 @@ with tab_dash:
                 st.rerun()
             
             df_base['Avance_Para_Promedio'] = df_base['Avance_%'].clip(upper=125)
-            
-            df_mapa = df_base.groupby(['Region_Filtro', 'Departamento_Real']).agg({
+
+            # --- Para las regiones centralizadas: un solo punto en Lima con el PROMEDIO GENERAL ---
+            df_centralizadas = df_base[df_base['Region_Filtro'].isin(REGIONES_CENTRALIZADAS)].copy()
+            if len(df_centralizadas) > 0:
+                df_centralizadas_mapa = df_centralizadas.groupby('Region_Filtro').agg({
+                    'Avance_Para_Promedio': 'mean'
+                }).reset_index()
+                df_centralizadas_mapa.rename(columns={'Avance_Para_Promedio': 'Avance_%'}, inplace=True)
+                df_centralizadas_mapa['Latitud'] = -12.0464
+                df_centralizadas_mapa['Longitud'] = -77.0428
+                df_centralizadas_mapa['Texto_Region'] = df_centralizadas_mapa['Region_Filtro']
+                df_centralizadas_mapa['Departamento_Real'] = 'LIMA'
+            else:
+                df_centralizadas_mapa = pd.DataFrame(columns=['Region_Filtro','Avance_%','Latitud','Longitud','Texto_Region','Departamento_Real'])
+
+            # --- Resto de regiones: se agrupan por Departamento_Real ---
+            df_resto = df_base[~df_base['Region_Filtro'].isin(REGIONES_CENTRALIZADAS)].copy()
+            df_mapa_resto = df_resto.groupby(['Region_Filtro', 'Departamento_Real']).agg({
                 'Avance_Para_Promedio': 'mean'
             }).reset_index()
-            df_mapa.rename(columns={'Avance_Para_Promedio': 'Avance_%'}, inplace=True)
-            
+            df_mapa_resto.rename(columns={'Avance_Para_Promedio': 'Avance_%'}, inplace=True)
+
             def obtener_coords(row):
                 reg = row['Region_Filtro']
                 depto = str(row['Departamento_Real']).upper().strip()
@@ -424,42 +408,34 @@ with tab_dash:
                     return COORDENADAS_PERU[depto][0], COORDENADAS_PERU[depto][1]
                 
                 return -9.19, -75.0152
-            
-            coords = df_mapa.apply(obtener_coords, axis=1, result_type='expand')
-            df_mapa['Latitud'] = coords[0]
-            df_mapa['Longitud'] = coords[1]
-            
-            def etiqueta(row):
-                reg = row['Region_Filtro']
-                depto = str(row['Departamento_Real']).upper().strip()
-                
-                if reg in ['CARPETA FISCAL', 'IML (MEDICINA LEGAL)', 'ANC (AUTORIDAD NACIONAL)']:
-                    depto_limpio = depto.replace('PROVINCIA CONSTITUCIONAL DEL ', '').replace('PROV. ', '')
-                    if depto_limpio in ['MULTIDEPARTAMENTAL', 'MULTIDISTRITAL', '']:
-                        depto_limpio = 'LIMA'
-                    return f"{reg} ({depto_limpio})"
-                return reg
-            
-            df_mapa['Texto_Region'] = df_mapa.apply(etiqueta, axis=1)
+
+            if len(df_mapa_resto) > 0:
+                coords = df_mapa_resto.apply(obtener_coords, axis=1, result_type='expand')
+                df_mapa_resto['Latitud'] = coords[0]
+                df_mapa_resto['Longitud'] = coords[1]
+                df_mapa_resto['Texto_Region'] = df_mapa_resto['Region_Filtro']
+
+            # Unir todo
+            df_mapa = pd.concat([df_mapa_resto, df_centralizadas_mapa], ignore_index=True)
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
             config_mapa = {'scrollZoom': False, 'doubleClick': False, 'displayModeBar': False}
 
-            # --- VENTANA GRANDE (height=700) PERO MAPA AJUSTADO CON BOUNDS PARA VER TODO EL PERÚ ---
+            # --- MAPA: ventana compacta (500px) para que TODO el Perú se vea sin scroll vertical ---
             try:
                 fig = px.scatter_map(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Texto_Region", 
                     hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Departamento_Real": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
+                    zoom=4.0, center={"lat": -9.5, "lon": -75.0}
                 )
                 fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     map_style="open-street-map", 
                     showlegend=False, 
-                    height=700,
-                    margin={"r":0,"t":0,"l":0,"b":0},
-                    map_bounds={"west": -84.5, "east": -65.5, "south": -19.5, "north": 0.5}
+                    height=500,
+                    margin={"r":0,"t":0,"l":0,"b":0}
                 )
             except AttributeError:
                 fig = px.scatter_mapbox(
@@ -467,14 +443,14 @@ with tab_dash:
                     text="Texto_Region", hover_name="Texto_Region", 
                     hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Departamento_Real": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
+                    zoom=4.0, center={"lat": -9.5, "lon": -75.0}
                 )
                 fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     mapbox_style="open-street-map", 
                     showlegend=False, 
-                    height=700,
-                    margin={"r":0,"t":0,"l":0,"b":0},
-                    mapbox_bounds={"west": -84.5, "east": -65.5, "south": -19.5, "north": 0.5}
+                    height=500,
+                    margin={"r":0,"t":0,"l":0,"b":0}
                 )
             
             st.plotly_chart(fig, use_container_width=True, config=config_mapa)
@@ -493,7 +469,7 @@ with tab_dash:
             
             df_region = df_base[df_base['Region_Filtro'] == region]
             
-            if region in ['IML (MEDICINA LEGAL)', 'CARPETA FISCAL', 'ANC (AUTORIDAD NACIONAL)']:
+            if region in REGIONES_CENTRALIZADAS:
                 deptos = ["Todos"] + sorted(list(df_region['Departamento_Real'].dropna().unique()))
                 depto_sel = st.selectbox("Filtrar por Departamento:", deptos)
                 if depto_sel != "Todos":
@@ -505,25 +481,18 @@ with tab_dash:
             if ue_sel != "Todas":
                 df_region = df_region[df_region['UE'] == ue_sel]
 
-            # --- Detectar columna UBIGEO disponible ---
+            # Detectar columna UBIGEO
             col_ubigeo = obtener_columna_ubigeo(df_region)
 
             df_problemas = df_region[(df_region['Estado_Semaforo'].str.contains('Rojo')) | (df_region['Estado_Semaforo'].str.contains('Morado')) | (df_region['Alerta_Critica_3M'] == '🚨 SÍ')]
             
-            # --- CONSTRUCCIÓN DE COLUMNAS CON UBIGEO ---
-            cols_mostrar = []
-            cols_mostrar.append('UE')
-            cols_mostrar.append('Centro de Costo')
+            # ============ TABLA 1: CRÍTICOS (con UBIGEO) ============
+            cols_mostrar = ['UE', 'Centro de Costo']
             if col_ubigeo:
                 cols_mostrar.append(col_ubigeo)
-            cols_mostrar.append('Unidad de Medida')
-            cols_mostrar.append(col_prog)
-            cols_mostrar.append(col_ejec)
-            cols_mostrar.append('Estado_Semaforo')
-            cols_mostrar.append('Alerta_Critica_3M')
+            cols_mostrar += ['Unidad de Medida', col_prog, col_ejec, 'Estado_Semaforo', 'Alerta_Critica_3M']
             
             df_problemas_visual = df_problemas[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
-            df_region_completa = df_region[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
             
             st.markdown("### 🚨 Centros de Costo Críticos")
             st.dataframe(df_problemas_visual.reset_index(drop=True), use_container_width=True, height=400)
@@ -532,7 +501,7 @@ with tab_dash:
             
             nombres_meses_cortos = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
             
-            # --- CONSTRUCCIÓN DE LA TABLA DE SEGUIMIENTO CON UBIGEO ---
+            # ============ TABLA 2: SEGUIMIENTO (con UBIGEO) ============
             base_cols = ['UE', 'Centro de Costo']
             if col_ubigeo:
                 base_cols.append(col_ubigeo)
@@ -564,5 +533,7 @@ with tab_dash:
 
             st.dataframe(df_seguimiento.reset_index(drop=True), use_container_width=True, height=500)
             
+            # ============ TABLA 3: SABANA COMPLETA (con UBIGEO) ============
+            df_region_completa = df_region[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
             with st.expander("Ver sabana completa"):
                 st.dataframe(df_region_completa.reset_index(drop=True), use_container_width=True, height=500)
