@@ -7,7 +7,7 @@ import os
 import base64
 
 # ==========================================
-# 0. PARCHE DE COMPATIBILIDAD (STREAMLIT CLOUD)
+# 0. PARCHE DE COMPATIBILIDAD
 # ==========================================
 if not hasattr(pd.DataFrame, 'iteritems'):
     pd.DataFrame.iteritems = pd.DataFrame.items
@@ -22,7 +22,7 @@ st.set_page_config(page_title="Dashboard Físico POI", layout="wide", initial_si
 CACHE_FILE = "cache_poi_institucional.parquet"
 
 # ==========================================
-# 2. ENCABEZADO INSTITUCIONAL INTEGRADO
+# 2. ENCABEZADO INSTITUCIONAL
 # ==========================================
 def get_base64_of_bin_file(bin_file):
     with open(bin_file, 'rb') as f:
@@ -45,9 +45,7 @@ else:
 
 st.markdown(f"""
     <div style="background-color: #0A192F; padding: 8px 30px; border-radius: 8px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-        <div>
-            {img_html}
-        </div>
+        <div>{img_html}</div>
         <div>
             <h2 style="color: #FFFFFF; margin: 0; text-align: right; font-family: 'Arial', sans-serif; font-size: 23px; font-weight: 600; letter-spacing: 0.5px;">
                 OFICINA DE PLANEAMIENTO Y PROGRAMACIÓN MULTIANUAL DE INVERSIONES
@@ -60,7 +58,7 @@ st.write("")
 st.divider()
 
 # ==========================================
-# 3. GESTIÓN DE PERSISTENCIA Y LÓGICA
+# 3. LÓGICA
 # ==========================================
 if 'region_seleccionada' not in st.session_state:
     st.session_state.region_seleccionada = None
@@ -74,22 +72,14 @@ def obtener_base_datos():
     return None
 
 def evaluar_semaforo(prog, ejec):
-    if prog == 0 and ejec == 0:
-        return '🟢 Verde (OK)'
-    if prog == 0 and ejec > 0:
-        return '🟣 Morado (Mala Prog.)'
-    if prog > 0 and ejec == 0:
-        return '🔴 Rojo (Crítico)'
-    
+    if prog == 0 and ejec == 0: return '🟢 Verde (OK)'
+    if prog == 0 and ejec > 0: return '🟣 Morado (Mala Prog.)'
+    if prog > 0 and ejec == 0: return '🔴 Rojo (Crítico)'
     avance = (ejec / prog) * 100
-    if avance > 125:
-        return '🟣 Morado (Sobre-ejecución)'
-    elif avance >= 90:
-        return '🟢 Verde'
-    elif avance >= 75:
-        return '🟡 Amarillo'
-    else:
-        return '🔴 Rojo'
+    if avance > 125: return '🟣 Morado (Sobre-ejecución)'
+    elif avance >= 90: return '🟢 Verde'
+    elif avance >= 75: return '🟡 Amarillo'
+    else: return '🔴 Rojo'
 
 def detectar_falla_continua(row, mes_actual_num=9):
     fallas_consecutivas = 0
@@ -97,26 +87,23 @@ def detectar_falla_continua(row, mes_actual_num=9):
         mes_str = str(i).zfill(2)
         prog = row.get(f'F(RE) {mes_str}', 0)
         ejec = row.get(f'F(SE) {mes_str}', 0)
-        
         if prog > 0:
             if (ejec / prog) < 0.75:
                 fallas_consecutivas += 1
             else:
                 fallas_consecutivas = 0 
-                
         if fallas_consecutivas >= 3:
             return '🚨 SÍ'
-            
     return 'NO'
 
 # ==========================================
-# 4. INTERFAZ Y PESTAÑAS
+# 4. PESTAÑAS
 # ==========================================
 tab_dash, tab_carga, tab_diagnostico = st.tabs(["🗺️ Dashboard Ejecutivo", "⚙️ Administrador (Carga de Datos)", "🔍 Diagnóstico"])
 
 with tab_carga:
     st.header("Actualización de Base de Datos Institucional")
-    st.info("Arrastra y suelta todos los archivos 'Exporta POI' (.xlsx) de todas las Unidades Ejecutoras al mismo tiempo.")
+    st.info("Arrastra y suelta todos los archivos 'Exporta POI' (.xlsx) al mismo tiempo.")
     
     with st.form("form_carga"):
         archivos_subidos = st.file_uploader("Subir archivos .xlsx", type=['xlsx'], accept_multiple_files=True)
@@ -124,7 +111,7 @@ with tab_carga:
         
     if submit_cargar:
         if archivos_subidos:
-            with st.spinner("Apilando bases de datos, calculando indicadores y guardando en servidor..."):
+            with st.spinner("Procesando..."):
                 lista_dfs = []
                 for archivo in archivos_subidos:
                     df_temp = pd.read_excel(archivo)
@@ -143,11 +130,10 @@ with tab_carga:
                 
                 df['Alerta_Critica_3M'] = df.apply(lambda row: detectar_falla_continua(row, 9), axis=1)
                 
-                # --- CLASIFICACIÓN EXACTA BASADA EN UBIGEO, UE Y CC RESPONSABLE ---
+                # =====================================================
+                # CLASIFICACIÓN DE REGIONES (CORREGIDA)
+                # =====================================================
                 def definir_region_filtro(row):
-                    # Concatenar TODAS las columnas de texto para búsqueda exhaustiva
-                    texto_completo = ' '.join([str(v).upper() for v in row.values if pd.notna(v)])
-                    
                     reg = str(row.get('Departamento Nombre UBIGEO', '')).upper()
                     prov = str(row.get('Provincia Nombre UBIGEO', '')).upper()
                     dist = str(row.get('Distrito Nombre UBIGEO', '')).upper()
@@ -155,28 +141,28 @@ with tab_carga:
                     cc_resp = str(row.get('CC Responsable', '')).upper()
                     cc = str(row.get('Centro de Costo', '')).upper()
                     
-                    # 1. CARPETA FISCAL (incluye MULTIDEPARTAMENTAL, ya no como filtro separado)
-                    if ('CARPETA FISCAL' in texto_completo or 
-                        'MULTIDEPARTAMENTAL' in texto_completo or 
-                        'MULTIDEPARTAMENTAL' in reg or 
-                        'MULTIDEPARTAMENTAL' in ue):
+                    # 1. CARPETA FISCAL (incluye MULTIDEPARTAMENTAL)
+                    if ('CARPETA FISCAL' in reg or 'CARPETA FISCAL' in ue or 
+                        'CARPETA FISCAL' in cc or 'CARPETA FISCAL' in cc_resp or
+                        'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue):
                         return 'CARPETA FISCAL'
                     
                     # 2. Callao
                     elif reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
                         return 'CALLAO'
                     
-                    # 3. Lima y sus dependencias especiales
+                    # 3. Lima
                     elif 'LIMA' in reg:
                         if 'MEDICINA LEGAL' in ue: return 'LIMA (IML)'
                         elif 'AUTORIDAD NACIONAL' in ue: return 'LIMA (ANC)'
                         else: return 'LIMA (GERENCIA GENERAL)'
                     
-                    # 4. Sullana (búsqueda exhaustiva en todas las columnas)
-                    elif 'SULLANA' in texto_completo or 'SULLANA' in prov or 'SULLANA' in dist or 'SULLANA' in cc_resp or 'SULLANA' in cc:
+                    # 4. SULLANA (PRIORIDAD ALTA - antes que Piura)
+                    elif ('SULLANA' in prov or 'SULLANA' in dist or 
+                          'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
                         return 'SULLANA'
                     
-                    # 5. Piura (solo si no es Sullana)
+                    # 5. PIURA (solo si no es Sullana)
                     elif 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
                         return 'PIURA'
                     
@@ -185,44 +171,48 @@ with tab_carga:
                 
                 df['Region_Filtro'] = df.apply(definir_region_filtro, axis=1)
                 
+                # Diagnóstico: mostrar cuántos registros tiene cada región
+                conteo = df['Region_Filtro'].value_counts()
+                st.write("**Regiones detectadas después de la clasificación:**")
+                st.dataframe(conteo.reset_index().rename(columns={'index': 'Región', 'Region_Filtro': 'Cantidad'}), use_container_width=True)
+                
                 df.to_parquet(CACHE_FILE, index=False)
-                st.success(f"✅ ¡Éxito! Se consolidaron y guardaron permanentemente {len(df)} registros de {len(archivos_subidos)} archivos.")
+                st.success(f"✅ ¡Éxito! Se guardaron {len(df)} registros de {len(archivos_subidos)} archivos.")
         else:
-            st.warning("⚠️ Debes seleccionar al menos un archivo Excel antes de procesar.")
+            st.warning("⚠️ Debes seleccionar al menos un archivo Excel.")
 
 with tab_diagnostico:
     st.header("🔍 Diagnóstico de Datos")
-    st.info("Esta pestaña te permite verificar qué regiones se están detectando y desde qué archivo provienen los datos.")
-    
     df_diag = obtener_base_datos()
     if df_diag is None:
-        st.warning("⚠️ No hay datos cargados. Sube los archivos en la pestaña 'Administrador'.")
+        st.warning("⚠️ No hay datos cargados.")
     else:
         st.subheader("📋 Regiones Detectadas")
         regiones = df_diag['Region_Filtro'].value_counts().reset_index()
-        regiones.columns = ['Region_Filtro', 'Cantidad de Registros']
+        regiones.columns = ['Region_Filtro', 'Cantidad']
         st.dataframe(regiones, use_container_width=True)
         
-        st.subheader("📁 Archivos Cargados")
-        if 'Archivo_Origen' in df_diag.columns:
-            archivos = df_diag['Archivo_Origen'].value_counts().reset_index()
-            archivos.columns = ['Archivo', 'Cantidad de Registros']
-            st.dataframe(archivos, use_container_width=True)
-        else:
-            st.warning("No se encontró la columna 'Archivo_Origen'. Vuelve a cargar los archivos para habilitar esta función.")
-        
-        st.subheader("🔎 Buscar 'SULLANA' en los datos")
+        st.subheader("🔎 ¿Existe SULLANA en los datos?")
         if st.button("Buscar SULLANA"):
             df_sullana = df_diag[
                 df_diag.apply(lambda row: 'SULLANA' in ' '.join([str(v).upper() for v in row.values if pd.notna(v)]), axis=1)
             ]
             if len(df_sullana) > 0:
                 st.success(f"✅ Se encontraron {len(df_sullana)} registros con 'SULLANA'.")
-                cols_mostrar = [c for c in ['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Actividad Operativa', 'Region_Filtro'] if c in df_sullana.columns]
-                st.dataframe(df_sullana[cols_mostrar].head(30), use_container_width=True)
+                cols_show = [c for c in ['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Provincia Nombre UBIGEO', 'Distrito Nombre UBIGEO', 'Region_Filtro'] if c in df_sullana.columns]
+                st.dataframe(df_sullana[cols_show].head(20), use_container_width=True)
             else:
-                st.error("❌ No se encontraron registros con 'SULLANA' en ninguna columna.")
-                st.info("💡 **Conclusión**: Los datos de Sullana NO están etiquetados como 'SULLANA' en los archivos. Están mezclados con los de Piura bajo el mismo Centro de Costo. Para separarlos, se necesita información adicional (por ejemplo, una lista de Centros de Costo o Actividades Operativas que pertenezcan a Sullana).")
+                st.error("❌ NO existe 'SULLANA' en los datos cargados.")
+        
+        st.subheader("🔎 Registros clasificados como SULLANA")
+        if 'Region_Filtro' in df_diag.columns:
+            df_s = df_diag[df_diag['Region_Filtro'] == 'SULLANA']
+            if len(df_s) > 0:
+                st.success(f"✅ Hay {len(df_s)} registros clasificados como SULLANA.")
+                cols_show = [c for c in ['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Provincia Nombre UBIGEO', 'Region_Filtro'] if c in df_s.columns]
+                st.dataframe(df_s[cols_show].head(20), use_container_width=True)
+            else:
+                st.warning("⚠️ No hay registros clasificados como SULLANA. Revisa la clasificación.")
 
 with tab_dash:
     fecha_actual = datetime.datetime.now().strftime('%d/%m/%Y')
@@ -231,16 +221,19 @@ with tab_dash:
     df_cargado = obtener_base_datos()
     
     if df_cargado is None:
-        st.warning("⚠️ No se encontró una base de datos institucional activa en el servidor. Sube los archivos XLSX en la pestaña 'Administrador' para comenzar.")
+        st.warning("⚠️ No hay base de datos. Sube los archivos en 'Administrador'.")
     else:
-        st.success(f"📂 **Base de Datos Institucional Activa:** {len(df_cargado):,} registros cargados desde el servidor.")
+        st.success(f"📂 **Base de Datos Activa:** {len(df_cargado):,} registros.")
 
         df_base = df_cargado.copy()
-        
-        # =========================================================
-        # EXCLUIR "MULTIDEPARTAMENTAL" SI AÚN EXISTE EN DATOS VIEJOS
-        # =========================================================
         df_base['Region_Filtro'] = df_base['Region_Filtro'].replace('MULTIDEPARTAMENTAL', 'CARPETA FISCAL')
+        
+        # FORZAR separación de Sullana si aún está dentro de PIURA
+        # Si hay registros con "SULLANA" en alguna columna pero clasificados como PIURA, reclasificar
+        mask_sullana = df_base.apply(
+            lambda row: 'SULLANA' in ' '.join([str(v).upper() for v in row.values if pd.notna(v)]), axis=1
+        )
+        df_base.loc[mask_sullana, 'Region_Filtro'] = 'SULLANA'
         
         col_filtro1, col_filtro2 = st.columns(2)
         meses_dict = {"Enero": "01", "Febrero": "02", "Marzo": "03", "Abril": "04", 
@@ -248,10 +241,10 @@ with tab_dash:
                       "Septiembre": "09", "Octubre": "10", "Noviembre": "11", "Diciembre": "12"}
                       
         with col_filtro1:
-            vista = st.radio("Período a evaluar:", ["Acumulado (Enero - Mes elegido)", "Mes Específico (Individual)"], horizontal=True)
+            vista = st.radio("Período:", ["Acumulado (Enero - Mes elegido)", "Mes Específico (Individual)"], horizontal=True)
             
         with col_filtro2:
-            mes_sel = st.selectbox("Seleccione el mes de corte:", list(meses_dict.keys()), index=8)
+            mes_sel = st.selectbox("Mes de corte:", list(meses_dict.keys()), index=8)
             mes_num = int(meses_dict[mes_sel])
             
             if vista == "Mes Específico (Individual)":
@@ -262,14 +255,13 @@ with tab_dash:
                 col_ejec = 'Ejec_Acumulada'
                 columnas_prog_acum = [f'F(RE) {str(i).zfill(2)}' for i in range(1, mes_num + 1)]
                 columnas_ejec_acum = [f'F(SE) {str(i).zfill(2)}' for i in range(1, mes_num + 1)]
-                
                 df_base[col_prog] = df_base[columnas_prog_acum].sum(axis=1)
                 df_base[col_ejec] = df_base[columnas_ejec_acum].sum(axis=1)
 
         if vista == "Mes Específico (Individual)":
-            st.info(f"📌 **Datos Individuales:** Mostrando la programación y ejecución correspondiente exclusivamente al mes de {mes_sel}.")
+            st.info(f"📌 **Datos Individuales:** {mes_sel}.")
         else:
-            st.info(f"📌 **Datos Acumulados:** Mostrando la suma de la programación y ejecución desde Enero hasta {mes_sel}.")
+            st.info(f"📌 **Datos Acumulados:** Enero - {mes_sel}.")
 
         df_base['Estado_Semaforo'] = df_base.apply(lambda row: evaluar_semaforo(row[col_prog], row[col_ejec]), axis=1)
         df_base['Avance_%'] = np.where(df_base[col_prog] > 0, (df_base[col_ejec] / df_base[col_prog]) * 100, 0)
@@ -278,24 +270,24 @@ with tab_dash:
         st.divider()
 
         st.markdown("""
-            <div style="background-color: #f8fafc; padding: 12px 20px; border-radius: 8px; border-left: 6px solid #0A192F; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <div style="background-color: #f8fafc; padding: 12px 20px; border-radius: 8px; border-left: 6px solid #0A192F; margin-bottom: 20px;">
                 <span style="font-size: 15px; color: #334155;">
-                    <b>📊 LEYENDA DE INDICADORES:</b> &nbsp;&nbsp;&nbsp;
-                    🟢 <b>Óptimo:</b> 90% a 125% &nbsp;&nbsp;|&nbsp;&nbsp;
-                    🟡 <b>En Riesgo:</b> 75% a 89% &nbsp;&nbsp;|&nbsp;&nbsp;
-                    🔴 <b>Crítico:</b> < 75% o sin ejecución &nbsp;&nbsp;|&nbsp;&nbsp;
-                    🟣 <b>Sobre-ejecución:</b> > 125% (Mala Programación) &nbsp;&nbsp;|&nbsp;&nbsp;
-                    🚨 <b>Alerta Crítica:</b> 3 o más meses consecutivos en Rojo
+                    <b>📊 LEYENDA:</b> &nbsp;
+                    🟢 <b>Óptimo:</b> 90-125% &nbsp;|&nbsp;
+                    🟡 <b>En Riesgo:</b> 75-89% &nbsp;|&nbsp;
+                    🔴 <b>Crítico:</b> <75% &nbsp;|&nbsp;
+                    🟣 <b>Sobre-ejecución:</b> >125% &nbsp;|&nbsp;
+                    🚨 <b>Alerta:</b> 3+ meses en Rojo
                 </span>
             </div>
         """, unsafe_allow_html=True)
 
         # =========================================================
-        # VISTA A: MAPA NACIONAL (MACRO)
+        # MAPA NACIONAL
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
-            region_elegida = st.selectbox("🔎 **Ingrese a una región o distrito fiscal para ver el detalle de sus Centros de Costo:**", opciones_regiones)
+            region_elegida = st.selectbox("🔎 **Ingrese a una región o distrito fiscal:**", opciones_regiones)
             
             if region_elegida != "-- Seleccione una región --":
                 st.session_state.region_seleccionada = region_elegida
@@ -311,7 +303,7 @@ with tab_dash:
                 'CUSCO': [-13.5383, -71.9675], 'HUANCAVELICA': [-12.7865, -74.9727], 'HUANUCO': [-9.9306, -76.2422], 
                 'ICA': [-14.0722, -75.7335], 'JUNIN': [-11.1588, -75.9922], 'LA LIBERTAD': [-8.1159, -79.0299], 
                 'LAMBAYEQUE': [-6.4255, -79.8800], 'LORETO': [-3.7491, -73.2538], 'MADRE DE DIOS': [-12.5933, -70.4300], 
-                'MOQUEGUA': [-17.1983, -70.9356], 'PASCO': [-10.6674, -76.2566], 'PIURA': [-4.9044, -80.2822], 
+                'MOQUEGUA': [-17.1983, -70.9356], 'PASCO': [-10.6674, -76.2566], 'PIURA': [-5.19, -80.63], 
                 'PUNO': [-15.8402, -70.0218], 'SAN MARTIN': [-6.9038, -76.3377], 'TACNA': [-18.0065, -70.2462], 
                 'TUMBES': [-3.5669, -80.4515], 'UCAYALI': [-8.3791, -74.5539]
             }
@@ -359,14 +351,7 @@ with tab_dash:
                     zoom=4.6, center={"lat": -9.3, "lon": -75.0}
                 )
                 fig.update_traces(marker=dict(size=13, opacity=0.9), textposition='top right', textfont=dict(size=12, color='black', family="Arial", weight="bold"))
-                fig.update_layout(
-                    map_style="open-street-map", 
-                    showlegend=False, 
-                    height=580, 
-                    margin={"r":0,"t":0,"l":0,"b":0},
-                    map_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
-                )
-            
+                fig.update_layout(map_style="open-street-map", showlegend=False, height=580, margin={"r":0,"t":0,"l":0,"b":0}, map_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0})
             except AttributeError:
                 fig = px.scatter_mapbox(
                     df_mapa, lat="Latitud", lon="Longitud", 
@@ -376,18 +361,12 @@ with tab_dash:
                     zoom=4.6, center={"lat": -9.3, "lon": -75.0}
                 )
                 fig.update_traces(marker=dict(size=13, opacity=0.9), textposition='top right', textfont=dict(size=12, color='black', family="Arial", weight="bold"))
-                fig.update_layout(
-                    mapbox_style="open-street-map", 
-                    showlegend=False, 
-                    height=580, 
-                    margin={"r":0,"t":0,"l":0,"b":0},
-                    mapbox_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
-                )
+                fig.update_layout(mapbox_style="open-street-map", showlegend=False, height=580, margin={"r":0,"t":0,"l":0,"b":0}, mapbox_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0})
             
             st.plotly_chart(fig, use_container_width=True, config=config_mapa)
 
         # =========================================================
-        # VISTA B: DETALLE DE LA REGIÓN (MICRO)
+        # DETALLE DE REGIÓN
         # =========================================================
         else:
             region = st.session_state.region_seleccionada
@@ -412,11 +391,10 @@ with tab_dash:
             df_problemas_visual = df_problemas[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
             df_region_completa = df_region[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
             
-            st.markdown("### 🚨 Centros de Costo Críticos (Déficit y Sobre-ejecución)")
+            st.markdown("### 🚨 Centros de Costo Críticos")
             st.dataframe(df_problemas_visual.reset_index(drop=True), use_container_width=True, height=400)
             
-            st.markdown("### 📈 Seguimiento de Avance Mensual (%) por Centro de Costo")
-            st.info("Esta tabla calcula el porcentaje de ejecución mes a mes. Las alertas moradas indican meses donde se registró ejecución sin haber programado ninguna meta.")
+            st.markdown("### 📈 Seguimiento de Avance Mensual (%)")
             
             nombres_meses_cortos = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
             df_seguimiento = df_region[['UE', 'Centro de Costo', 'Unidad de Medida']].copy()
@@ -429,7 +407,6 @@ with tab_dash:
                 if col_p in df_region.columns and col_e in df_region.columns:
                     prog_val = df_region[col_p]
                     ejec_val = df_region[col_e]
-                    
                     lista_mes = []
                     for p, e in zip(prog_val, ejec_val):
                         if p > 0:
@@ -440,12 +417,11 @@ with tab_dash:
                             lista_mes.append(f"🟣 {e_str} (Sin meta)")
                         else:
                             lista_mes.append("-")
-                            
                     df_seguimiento[nombres_meses_cortos[i-1]] = lista_mes
                 else:
                     df_seguimiento[nombres_meses_cortos[i-1]] = "-"
 
             st.dataframe(df_seguimiento.reset_index(drop=True), use_container_width=True, height=500)
             
-            with st.expander("Ver sabana completa de la región (Valores absolutos)"):
+            with st.expander("Ver sabana completa"):
                 st.dataframe(df_region_completa.reset_index(drop=True), use_container_width=True, height=500)
