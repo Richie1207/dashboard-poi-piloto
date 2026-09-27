@@ -19,7 +19,6 @@ if not hasattr(pd.Series, 'iteritems'):
 # ==========================================
 st.set_page_config(page_title="Dashboard Físico POI", layout="wide", initial_sidebar_state="collapsed")
 
-# Archivo físico en el servidor para persistencia absoluta ante recargas (F5)
 CACHE_FILE = "cache_poi_institucional.parquet"
 
 # ==========================================
@@ -61,12 +60,11 @@ st.write("")
 st.divider()
 
 # ==========================================
-# 3. GESTIÓN DE PERSISTENCIA (DISCO Y SESIÓN)
+# 3. GESTIÓN DE PERSISTENCIA Y LÓGICA
 # ==========================================
 if 'region_seleccionada' not in st.session_state:
     st.session_state.region_seleccionada = None
 
-# Función para cargar datos (Revisa memoria, y si no está, revisa el disco del servidor)
 def obtener_base_datos():
     if os.path.exists(CACHE_FILE):
         try:
@@ -118,7 +116,7 @@ tab_dash, tab_carga = st.tabs(["🗺️ Dashboard Ejecutivo", "⚙️ Administra
 
 with tab_carga:
     st.header("Actualización de Base de Datos Institucional")
-    st.info("Arrastra y suelta todos los archivos 'Exporta POI' (.xlsx) de todas las Unidades Ejecutoras al mismo tiempo. Los datos se guardarán de forma permanente en el servidor hasta que realices una nueva actualización.")
+    st.info("Arrastra y suelta todos los archivos 'Exporta POI' (.xlsx) de todas las Unidades Ejecutoras al mismo tiempo.")
     
     with st.form("form_carga"):
         archivos_subidos = st.file_uploader("Subir archivos .xlsx", type=['xlsx'], accept_multiple_files=True)
@@ -144,6 +142,7 @@ with tab_carga:
                 
                 df['Alerta_Critica_3M'] = df.apply(lambda row: detectar_falla_continua(row, 9), axis=1)
                 
+                # --- NUEVA LÓGICA DE SEPARACIÓN REGIONAL Y UNIDADES EJECUTORAS (LIMA, CALLAO, PIURA/SULLANA) ---
                 def definir_region_filtro(row):
                     reg = row['Departamento Nombre UBIGEO']
                     ue = str(row['UE']).upper()
@@ -155,15 +154,16 @@ with tab_carga:
                         elif 'CARPETA FISCAL' in ue: return 'LIMA (CARPETA FISCAL)'
                         elif 'AUTORIDAD NACIONAL' in ue: return 'LIMA (ANC)'
                         else: return 'LIMA (GERENCIA GENERAL)'
+                    elif reg == 'PIURA':
+                        if 'SULLANA' in ue: return 'PIURA - SULLANA'
+                        else: return 'PIURA (SEDE CENTRAL / OTROS)'
                     else:
                         return reg
                 
                 df['Region_Filtro'] = df.apply(definir_region_filtro, axis=1)
                 
-                # GUARDADO FÍSICO PERSISTENTE EN DISCO DEL SERVIDOR
                 df.to_parquet(CACHE_FILE, index=False)
-                
-                st.success(f"✅ ¡Éxito! Se consolidaron y guardaron permanentemente {len(df)} registros de {len(archivos_subidos)} archivos. Ya puedes actualizar la página con total seguridad.")
+                st.success(f"✅ ¡Éxito! Se consolidaron y guardaron permanentemente {len(df)} registros de {len(archivos_subidos)} archivos.")
         else:
             st.warning("⚠️ Debes seleccionar al menos un archivo Excel antes de procesar.")
 
@@ -174,9 +174,9 @@ with tab_dash:
     df_cargado = obtener_base_datos()
     
     if df_cargado is None:
-        st.warning("⚠️ No se encontró una base de datos institucional activa en el servidor. Por favor, sube los archivos XLSX en la pestaña 'Administrador (Carga de Datos)' para inicializar el sistema.")
+        st.warning("⚠️ No se encontró una base de datos institucional activa en el servidor. Sube los archivos XLSX en la pestaña 'Administrador' para comenzar.")
     else:
-        st.success(f"📂 **Base de Datos Institucional Activa (Persistente):** {len(df_cargado):,} registros cargados desde el servidor.")
+        st.success(f"📂 **Base de Datos Institucional Activa:** {len(df_cargado):,} registros cargados desde el servidor.")
 
         df_base = df_cargado.copy()
         
@@ -233,7 +233,7 @@ with tab_dash:
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
-            region_elegida = st.selectbox("🔎 **Ingrese a una región (o entidad de Lima) para ver el detalle de sus Centros de Costo:**", opciones_regiones)
+            region_elegida = st.selectbox("🔎 **Ingrese a una región (o entidad especializada) para ver el detalle de sus Centros de Costo:**", opciones_regiones)
             
             if region_elegida != "-- Seleccione una región --":
                 st.session_state.region_seleccionada = region_elegida
@@ -261,6 +261,8 @@ with tab_dash:
                 elif 'LIMA (ANC)' in reg: return -11.95
                 elif 'LIMA (GERENCIA GENERAL)' in reg: return -12.05
                 elif 'CALLAO' in reg: return -12.06
+                elif 'PIURA - SULLANA' in reg: return -4.90
+                elif 'PIURA' in reg: return -5.19
                 else: return coordenadas_peru.get(row['Departamento Nombre UBIGEO'], [0, 0])[0]
 
             def obtener_lon(row):
@@ -270,11 +272,17 @@ with tab_dash:
                 elif 'LIMA (ANC)' in reg: return -76.30
                 elif 'LIMA (GERENCIA GENERAL)' in reg: return -76.90
                 elif 'CALLAO' in reg: return -77.15
+                elif 'PIURA - SULLANA' in reg: return -80.68
+                elif 'PIURA' in reg: return -80.63
                 else: return coordenadas_peru.get(row['Departamento Nombre UBIGEO'], [0, 0])[1]
 
             def limpiar_nombre(reg_filtro):
                 if 'LIMA (' in reg_filtro:
                     return reg_filtro.replace('LIMA (', '').replace(')', '')
+                elif 'PIURA - SULLANA' in reg_filtro:
+                    return 'SULLANA'
+                elif 'PIURA (' in reg_filtro:
+                    return 'PIURA (SEDE)'
                 return reg_filtro
 
             df_mapa['Latitud'] = df_mapa.apply(obtener_lat, axis=1)
@@ -282,19 +290,24 @@ with tab_dash:
             df_mapa['Texto_Region'] = df_mapa['Region_Filtro'].apply(limpiar_nombre)
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
+            # =========================================================
+            # MAPA EQUILIBRADO Y CON ZOOM TOTALMENTE BLOQUEADO
+            # =========================================================
+            config_mapa = {'scrollZoom': False, 'doubleClick': False, 'displayModeBar': False}
+
             try:
                 fig = px.scatter_map(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Region_Filtro", 
                     hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.8, center={"lat": -9.3, "lon": -75.0}
+                    zoom=4.6, center={"lat": -9.3, "lon": -75.0}
                 )
-                fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
+                fig.update_traces(marker=dict(size=13, opacity=0.9), textposition='top right', textfont=dict(size=12, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     map_style="open-street-map", 
                     showlegend=False, 
-                    height=850, 
+                    height=580,  # <-- Altura equilibrada y profesional
                     margin={"r":0,"t":0,"l":0,"b":0},
                     map_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
                 )
@@ -305,18 +318,19 @@ with tab_dash:
                     text="Texto_Region", hover_name="Region_Filtro", 
                     hover_data={"Avance_%": ':.1f', "Departamento Nombre UBIGEO": False, "Region_Filtro": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.8, center={"lat": -9.3, "lon": -75.0}
+                    zoom=4.6, center={"lat": -9.3, "lon": -75.0}
                 )
-                fig.update_traces(marker=dict(size=14, opacity=0.9), textposition='top right', textfont=dict(size=13, color='black', family="Arial", weight="bold"))
+                fig.update_traces(marker=dict(size=13, opacity=0.9), textposition='top right', textfont=dict(size=12, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     mapbox_style="open-street-map", 
                     showlegend=False, 
-                    height=850, 
+                    height=580,  # <-- Altura equilibrada y profesional
                     margin={"r":0,"t":0,"l":0,"b":0},
                     mapbox_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
                 )
             
-            st.plotly_chart(fig, use_container_width=True)
+            # Renderizamos con el config estático que bloquea por completo el zoom
+            st.plotly_chart(fig, use_container_width=True, config=config_mapa)
 
         # =========================================================
         # VISTA B: DETALLE DE LA REGIÓN (MICRO)
