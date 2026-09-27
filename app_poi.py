@@ -142,25 +142,27 @@ with tab_carga:
                 
                 df['Alerta_Critica_3M'] = df.apply(lambda row: detectar_falla_continua(row, 9), axis=1)
                 
-                # --- CLASIFICACIÓN QUIRÚRGICA: LIMA, CALLAO, SULLANA, PIURA Y CARPETA FISCAL ---
+                # --- CLASIFICACIÓN INSTITUCIONAL PRECISA (DISTRITOS FISCALES Y CARPETA FISCAL) ---
                 def definir_region_filtro(row):
                     reg = str(row['Departamento Nombre UBIGEO']).upper()
                     ue = str(row['UE']).upper()
                     cc = str(row.get('Centro de Costo', '')).upper()
                     
-                    # Detectar Carpeta Fiscal / Multidepartamental
-                    if 'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue or 'CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc:
-                        return 'MULTIDEPARTAMENTAL (CARPETA FISCAL)'
+                    # Todo lo multidepartamental o de carpeta fiscal va estrictamente a Carpeta Fiscal
+                    if 'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue or 'CARPETA FISCAL' in reg or 'CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc:
+                        return 'CARPETA FISCAL'
                     elif reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
                         return 'CALLAO'
                     elif 'LIMA' in reg:
                         if 'MEDICINA LEGAL' in ue: return 'LIMA (IML)'
-                        elif 'CARPETA FISCAL' in ue: return 'LIMA (CARPETA FISCAL)'
                         elif 'AUTORIDAD NACIONAL' in ue: return 'LIMA (ANC)'
                         else: return 'LIMA (GERENCIA GENERAL)'
                     elif 'PIURA' in reg or 'PIURA' in ue:
-                        if 'SULLANA' in ue or 'SULLANA' in cc: return 'PIURA - SULLANA'
-                        else: return 'PIURA (SEDE CENTRAL)'
+                        # Identificar si pertenece al Distrito Fiscal / Sede de Sullana
+                        if 'SULLANA' in ue or 'SULLANA' in cc or 'SULLANA' in reg: 
+                            return 'SULLANA'
+                        else: 
+                            return 'PIURA'
                     else:
                         return reg
                 
@@ -237,7 +239,7 @@ with tab_dash:
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
-            region_elegida = st.selectbox("🔎 **Ingrese a una región (o entidad especializada) para ver el detalle de sus Centros de Costo:**", opciones_regiones)
+            region_elegida = st.selectbox("🔎 **Ingrese a una región o distrito fiscal para ver el detalle de sus Centros de Costo:**", opciones_regiones)
             
             if region_elegida != "-- Seleccione una región --":
                 st.session_state.region_seleccionada = region_elegida
@@ -261,36 +263,28 @@ with tab_dash:
             def obtener_lat(row):
                 reg = row['Region_Filtro']
                 if 'LIMA (IML)' in reg: return -11.60
-                elif 'LIMA (CARPETA FISCAL)' in reg: return -12.40
                 elif 'LIMA (ANC)' in reg: return -11.95
                 elif 'LIMA (GERENCIA GENERAL)' in reg: return -12.05
                 elif 'CALLAO' in reg: return -12.06
-                elif 'PIURA - SULLANA' in reg: return -4.90
+                elif 'SULLANA' in reg: return -4.90
                 elif 'PIURA' in reg: return -5.19
-                elif 'MULTIDEPARTAMENTAL' in reg: return -12.04
+                elif 'CARPETA FISCAL' in reg: return -12.04
                 else: return coordenadas_peru.get(str(row['Departamento Nombre UBIGEO']).upper(), [0, 0])[0]
 
             def obtener_lon(row):
                 reg = row['Region_Filtro']
                 if 'LIMA (IML)' in reg: return -76.60
-                elif 'LIMA (CARPETA FISCAL)' in reg: return -76.65
                 elif 'LIMA (ANC)' in reg: return -76.30
                 elif 'LIMA (GERENCIA GENERAL)' in reg: return -76.90
                 elif 'CALLAO' in reg: return -77.15
-                elif 'PIURA - SULLANA' in reg: return -80.68
+                elif 'SULLANA' in reg: return -80.68
                 elif 'PIURA' in reg: return -80.63
-                elif 'MULTIDEPARTAMENTAL' in reg: return -77.03
+                elif 'CARPETA FISCAL' in reg: return -77.03
                 else: return coordenadas_peru.get(str(row['Departamento Nombre UBIGEO']).upper(), [0, 0])[1]
 
             def limpiar_nombre(reg_filtro):
                 if 'LIMA (' in reg_filtro:
                     return reg_filtro.replace('LIMA (', '').replace(')', '')
-                elif 'PIURA - SULLANA' in reg_filtro:
-                    return 'SULLANA'
-                elif 'PIURA (' in reg_filtro:
-                    return 'PIURA (SEDE)'
-                elif 'MULTIDEPARTAMENTAL' in reg_filtro:
-                    return 'MULTIDEP./CARPETA FISCAL'
                 return reg_filtro
 
             df_mapa['Latitud'] = df_mapa.apply(obtener_lat, axis=1)
