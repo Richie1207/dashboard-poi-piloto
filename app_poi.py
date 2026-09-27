@@ -142,21 +142,25 @@ with tab_carga:
                 
                 df['Alerta_Critica_3M'] = df.apply(lambda row: detectar_falla_continua(row, 9), axis=1)
                 
-                # --- NUEVA LÓGICA DE SEPARACIÓN REGIONAL Y UNIDADES EJECUTORAS (LIMA, CALLAO, PIURA/SULLANA) ---
+                # --- CLASIFICACIÓN QUIRÚRGICA: LIMA, CALLAO, SULLANA, PIURA Y CARPETA FISCAL ---
                 def definir_region_filtro(row):
-                    reg = row['Departamento Nombre UBIGEO']
+                    reg = str(row['Departamento Nombre UBIGEO']).upper()
                     ue = str(row['UE']).upper()
+                    cc = str(row.get('Centro de Costo', '')).upper()
                     
-                    if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
+                    # Detectar Carpeta Fiscal / Multidepartamental
+                    if 'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue or 'CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc:
+                        return 'MULTIDEPARTAMENTAL (CARPETA FISCAL)'
+                    elif reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
                         return 'CALLAO'
-                    elif reg == 'LIMA':
+                    elif 'LIMA' in reg:
                         if 'MEDICINA LEGAL' in ue: return 'LIMA (IML)'
                         elif 'CARPETA FISCAL' in ue: return 'LIMA (CARPETA FISCAL)'
                         elif 'AUTORIDAD NACIONAL' in ue: return 'LIMA (ANC)'
                         else: return 'LIMA (GERENCIA GENERAL)'
-                    elif reg == 'PIURA':
-                        if 'SULLANA' in ue: return 'PIURA - SULLANA'
-                        else: return 'PIURA (SEDE CENTRAL / OTROS)'
+                    elif 'PIURA' in reg or 'PIURA' in ue:
+                        if 'SULLANA' in ue or 'SULLANA' in cc: return 'PIURA - SULLANA'
+                        else: return 'PIURA (SEDE CENTRAL)'
                     else:
                         return reg
                 
@@ -263,7 +267,8 @@ with tab_dash:
                 elif 'CALLAO' in reg: return -12.06
                 elif 'PIURA - SULLANA' in reg: return -4.90
                 elif 'PIURA' in reg: return -5.19
-                else: return coordenadas_peru.get(row['Departamento Nombre UBIGEO'], [0, 0])[0]
+                elif 'MULTIDEPARTAMENTAL' in reg: return -12.04
+                else: return coordenadas_peru.get(str(row['Departamento Nombre UBIGEO']).upper(), [0, 0])[0]
 
             def obtener_lon(row):
                 reg = row['Region_Filtro']
@@ -274,7 +279,8 @@ with tab_dash:
                 elif 'CALLAO' in reg: return -77.15
                 elif 'PIURA - SULLANA' in reg: return -80.68
                 elif 'PIURA' in reg: return -80.63
-                else: return coordenadas_peru.get(row['Departamento Nombre UBIGEO'], [0, 0])[1]
+                elif 'MULTIDEPARTAMENTAL' in reg: return -77.03
+                else: return coordenadas_peru.get(str(row['Departamento Nombre UBIGEO']).upper(), [0, 0])[1]
 
             def limpiar_nombre(reg_filtro):
                 if 'LIMA (' in reg_filtro:
@@ -283,6 +289,8 @@ with tab_dash:
                     return 'SULLANA'
                 elif 'PIURA (' in reg_filtro:
                     return 'PIURA (SEDE)'
+                elif 'MULTIDEPARTAMENTAL' in reg_filtro:
+                    return 'MULTIDEP./CARPETA FISCAL'
                 return reg_filtro
 
             df_mapa['Latitud'] = df_mapa.apply(obtener_lat, axis=1)
@@ -290,9 +298,6 @@ with tab_dash:
             df_mapa['Texto_Region'] = df_mapa['Region_Filtro'].apply(limpiar_nombre)
             df_mapa['Color'] = df_mapa['Avance_%'].apply(lambda x: 'purple' if x > 125 else ('green' if x >= 90 else ('orange' if x >= 75 else 'red')))
 
-            # =========================================================
-            # MAPA EQUILIBRADO Y CON ZOOM TOTALMENTE BLOQUEADO
-            # =========================================================
             config_mapa = {'scrollZoom': False, 'doubleClick': False, 'displayModeBar': False}
 
             try:
@@ -307,7 +312,7 @@ with tab_dash:
                 fig.update_layout(
                     map_style="open-street-map", 
                     showlegend=False, 
-                    height=580,  # <-- Altura equilibrada y profesional
+                    height=580, 
                     margin={"r":0,"t":0,"l":0,"b":0},
                     map_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
                 )
@@ -324,12 +329,11 @@ with tab_dash:
                 fig.update_layout(
                     mapbox_style="open-street-map", 
                     showlegend=False, 
-                    height=580,  # <-- Altura equilibrada y profesional
+                    height=580, 
                     margin={"r":0,"t":0,"l":0,"b":0},
                     mapbox_bounds={"west": -85.0, "east": -65.0, "south": -20.0, "north": 0.0}
                 )
             
-            # Renderizamos con el config estático que bloquea por completo el zoom
             st.plotly_chart(fig, use_container_width=True, config=config_mapa)
 
         # =========================================================
