@@ -112,7 +112,7 @@ def detectar_falla_continua(row, mes_actual_num=9):
 # ==========================================
 # 4. INTERFAZ Y PESTAÑAS
 # ==========================================
-tab_dash, tab_carga = st.tabs(["🗺️ Dashboard Ejecutivo", "⚙️ Administrador (Carga de Datos)"])
+tab_dash, tab_carga, tab_diagnostico = st.tabs(["🗺️ Dashboard Ejecutivo", "⚙️ Administrador (Carga de Datos)", "🔍 Diagnóstico"])
 
 with tab_carga:
     st.header("Actualización de Base de Datos Institucional")
@@ -128,6 +128,7 @@ with tab_carga:
                 lista_dfs = []
                 for archivo in archivos_subidos:
                     df_temp = pd.read_excel(archivo)
+                    df_temp['Archivo_Origen'] = archivo.name  # Guardamos el nombre del archivo
                     lista_dfs.append(df_temp)
                 
                 df = pd.concat(lista_dfs, ignore_index=True)
@@ -182,6 +183,45 @@ with tab_carga:
                 st.success(f"✅ ¡Éxito! Se consolidaron y guardaron permanentemente {len(df)} registros de {len(archivos_subidos)} archivos.")
         else:
             st.warning("⚠️ Debes seleccionar al menos un archivo Excel antes de procesar.")
+
+with tab_diagnostico:
+    st.header("🔍 Diagnóstico de Datos")
+    st.info("Esta pestaña te permite verificar qué regiones se están detectando y desde qué archivo provienen los datos.")
+    
+    df_diag = obtener_base_datos()
+    if df_diag is None:
+        st.warning("⚠️ No hay datos cargados. Sube los archivos en la pestaña 'Administrador'.")
+    else:
+        st.subheader("📋 Regiones Detectadas")
+        regiones = df_diag['Region_Filtro'].value_counts().reset_index()
+        regiones.columns = ['Region_Filtro', 'Cantidad de Registros']
+        st.dataframe(regiones, use_container_width=True)
+        
+        st.subheader("📁 Archivos Cargados")
+        if 'Archivo_Origen' in df_diag.columns:
+            archivos = df_diag['Archivo_Origen'].value_counts().reset_index()
+            archivos.columns = ['Archivo', 'Cantidad de Registros']
+            st.dataframe(archivos, use_container_width=True)
+        else:
+            st.warning("No se encontró la columna 'Archivo_Origen'. Vuelve a cargar los archivos para habilitar esta función.")
+        
+        st.subheader("🔎 Buscar 'SULLANA' en los datos")
+        if st.button("Buscar SULLANA"):
+            df_sullana = df_diag[
+                df_diag.apply(lambda row: 'SULLANA' in str(row.get('Departamento Nombre UBIGEO', '')).upper() or
+                                         'SULLANA' in str(row.get('Provincia Nombre UBIGEO', '')).upper() or
+                                         'SULLANA' in str(row.get('Distrito Nombre UBIGEO', '')).upper() or
+                                         'SULLANA' in str(row.get('UE', '')).upper() or
+                                         'SULLANA' in str(row.get('CC Responsable', '')).upper() or
+                                         'SULLANA' in str(row.get('Centro de Costo', '')).upper() or
+                                         'SULLANA' in str(row.get('Actividad Operativa', '')).upper(), axis=1)
+            ]
+            if len(df_sullana) > 0:
+                st.success(f"✅ Se encontraron {len(df_sullana)} registros con 'SULLANA'.")
+                st.dataframe(df_sullana[['Archivo_Origen', 'UE', 'CC Responsable', 'Centro de Costo', 'Actividad Operativa', 'Region_Filtro']].head(20), use_container_width=True)
+            else:
+                st.error("❌ No se encontraron registros con 'SULLANA' en ninguna columna. Esto explica por qué Sullana no aparece en el mapa.")
+                st.info("💡 **Sugerencia**: Si Sullana tiene su propio archivo .xlsx, asegúrate de cargarlo junto con los demás. Si Sullana está dentro del archivo de Piura, necesitas proporcionar una lista de Centros de Costo o Unidades que pertenezcan a Sullana para poder separarlos.")
 
 with tab_dash:
     fecha_actual = datetime.datetime.now().strftime('%d/%m/%Y')
