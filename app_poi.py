@@ -58,10 +58,10 @@ st.write("")
 st.divider()
 
 # ==========================================
-# 3. VARIABLES DE SESIÓN Y LÓGICA MATEMÁTICA
+# 3. VARIABLES DE SESIÓN (ESTADO PERSISTENTE)
 # ==========================================
-if 'df' not in st.session_state:
-    st.session_state.df = None
+if 'df_poi' not in st.session_state:
+    st.session_state.df_poi = None
 if 'region_seleccionada' not in st.session_state:
     st.session_state.region_seleccionada = None
 
@@ -110,10 +110,13 @@ with tab_carga:
     st.header("Actualización de Base de Datos Institucional")
     st.info("Arrastra y suelta todos los archivos 'Exporta POI' (.xlsx) de todas las Unidades Ejecutoras al mismo tiempo.")
     
-    archivos_subidos = st.file_uploader("Subir archivos .xlsx", type=['xlsx'], accept_multiple_files=True)
-    
-    if archivos_subidos:
-        if st.button(f"Procesar {len(archivos_subidos)} archivos", type="primary"):
+    # Usamos un formulario para evitar que se reseteen los archivos o se pierda el estado al hacer clic
+    with st.form("form_carga"):
+        archivos_subidos = st.file_uploader("Subir archivos .xlsx", type=['xlsx'], accept_multiple_files=True)
+        submit_cargar = st.form_submit_button("Procesar Archivos", type="primary")
+        
+    if submit_cargar:
+        if archivos_subidos:
             with st.spinner("Apilando bases de datos y calculando indicadores..."):
                 lista_dfs = []
                 for archivo in archivos_subidos:
@@ -148,21 +151,23 @@ with tab_carga:
                 
                 df['Region_Filtro'] = df.apply(definir_region_filtro, axis=1)
                 
-                # GUARDAMOS EN MEMORIA PERSISTENTE DE SESIÓN
-                st.session_state.df = df
-                st.success(f"✅ ¡Éxito! Se consolidaron {len(df)} registros de {len(archivos_subidos)} archivos. Los datos ya están listos en la pestaña Dashboard.")
+                # ASIGNACIÓN SEGURA A SESSION_STATE
+                st.session_state.df_poi = df
+                st.success(f"✅ ¡Éxito! Se consolidaron {len(df)} registros de {len(archivos_subidos)} archivos. Ya puedes ir a la pestaña 'Dashboard Ejecutivo'.")
+        else:
+            st.warning("⚠️ Debes seleccionar al menos un archivo Excel antes de procesar.")
 
 with tab_dash:
     fecha_actual = datetime.datetime.now().strftime('%d/%m/%Y')
     st.markdown(f"<div style='text-align: right; font-size: 15px; color: #666;'><b>Fecha de consulta:</b> {fecha_actual}</div>", unsafe_allow_html=True)
     
-    if st.session_state.df is None:
-        st.warning("⚠️ Sube los archivos XLSX en la pestaña 'Administrador' para comenzar.")
+    if st.session_state.df_poi is None:
+        st.warning("⚠️ No hay datos cargados. Por favor, sube los archivos XLSX en la pestaña 'Administrador (Carga de Datos)' para comenzar.")
     else:
-        # MENSAJE DE ESTADO: Indica cuántos registros activos hay cargados en la sesión
-        st.success(f"📂 **Base de Datos Activa:** {len(st.session_state.df):,} registros cargados en memoria.")
+        # Mostramos indicador de que los datos están retenidos de forma segura en memoria
+        st.success(f"📂 **Base de Datos Institucional Activa:** {len(st.session_state.df_poi):,} registros almacenados correctamente en la sesión.")
 
-        df_base = st.session_state.df.copy()
+        df_base = st.session_state.df_poi.copy()
         
         col_filtro1, col_filtro2 = st.columns(2)
         meses_dict = {"Enero": "01", "Febrero": "02", "Marzo": "03", "Abril": "04", 
@@ -217,7 +222,7 @@ with tab_dash:
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
-            region_elegida = st.selectbox("🔎 **Ingrese a una región (o entidad de Lima) para ver el detalle de sus Centros de Costo:**", opciones_regiones)
+            region_elegida = st.selectbox("🔎 **Ingrese a una región (o entidad de Lima) para ver el detalle de seus Centros de Costo:**", opciones_regiones)
             
             if region_elegida != "-- Seleccione una región --":
                 st.session_state.region_seleccionada = region_elegida
