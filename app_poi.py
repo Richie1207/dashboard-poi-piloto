@@ -85,30 +85,10 @@ COORDENADAS_PERU = {
     'SAN MARTIN': [-6.9038, -76.3377],
     'TACNA': [-18.0065, -70.2462],
     'TUMBES': [-3.5669, -80.4515],
-    'UCAYALI': [-8.3791, -74.5539],
-    'PROVINCIA CONSTITUCIONAL DEL CALLAO': [-12.0566, -77.1181],
-    'PROV. CALLAO': [-12.0566, -77.1181],
-    'MULTIDEPARTAMENTAL': [-12.0464, -77.0428],
-    'MULTIDISTRITAL': [-12.0464, -77.0428],
-    'LIMA NOROESTE': [-11.95, -77.05],
-    'LIMA NORTE': [-11.95, -77.05],
-    'LIMA SUR': [-12.20, -76.95],
-    'LIMA ESTE': [-12.03, -76.90],
-    'LIMA CENTRO': [-12.0464, -77.0428],
-    'CALLAO': [-12.0566, -77.1181],
-    'SANTA': [-9.08, -78.58],
-    'HUAURA': [-11.10, -77.60],
-    'CANETE': [-13.07, -76.38],
-    'SELVA CENTRAL': [-11.05, -75.30],
+    'UCAYALI': [-8.3791, -74.5539]
 }
 
-DEPARTAMENTOS_PERU = [
-    'AMAZONAS', 'ANCASH', 'APURIMAC', 'AREQUIPA', 'AYACUCHO', 'CAJAMARCA',
-    'CALLAO', 'CUSCO', 'HUANCAVELICA', 'HUANUCO', 'ICA', 'JUNIN',
-    'LA LIBERTAD', 'LAMBAYEQUE', 'LIMA', 'LORETO', 'MADRE DE DIOS',
-    'MOQUEGUA', 'PASCO', 'PIURA', 'PUNO', 'SAN MARTIN', 'TACNA',
-    'TUMBES', 'UCAYALI'
-]
+DEPARTAMENTOS_PERU = list(COORDENADAS_PERU.keys())
 
 # Regiones institucionales que se muestran como UN SOLO PUNTO en Lima
 REGIONES_CENTRALIZADAS = ['ANC (AUTORIDAD NACIONAL)', 'CARPETA FISCAL', 'IML (MEDICINA LEGAL)']
@@ -132,14 +112,13 @@ def extraer_departamento_de_actividad(texto):
     return None
 
 def obtener_columna_ubigeo(df):
-    """Devuelve el nombre de la columna UBIGEO disponible en el DataFrame."""
     for c in ['Ubigeo', 'UBIGEO', 'ubigeo', 'Código Ubigeo', 'Codigo Ubigeo', 'CODIGO UBIGEO']:
         if c in df.columns:
             return c
     return None
 
 # ==========================================
-# 5. LÓGICA
+# 5. LÓGICA DE CLASIFICACIÓN
 # ==========================================
 if 'region_seleccionada' not in st.session_state:
     st.session_state.region_seleccionada = None
@@ -187,7 +166,7 @@ def reclasificar_row(row):
 
     if ('CARPETA FISCAL' in ue or 'CARPETA FISCAL' in cc or 
         'CARPETA FISCAL' in cc_resp or 'CARPETA FISCAL' in reg or
-        'CARPETA FISCAL ELECTRONICA' in ue):
+        'CARPETA FISCAL ELECTRONICA' in ue or 'MULTIDEPARTAMENTAL' in reg or 'MULTIDEPARTAMENTAL' in ue):
         return 'CARPETA FISCAL'
 
     if ('MEDICINA LEGAL' in ue or 'IML' in ue or 
@@ -198,14 +177,17 @@ def reclasificar_row(row):
         return 'ANC (AUTORIDAD NACIONAL)'
 
     if ('SULLANA' in prov or 'SULLANA' in dist or 
-        'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc):
+        'SULLANA' in cc_resp or 'SULLANA' in ue or 'SULLANA' in cc or 'SULLANA' in reg):
         return 'SULLANA'
 
     if 'PIURA' in reg or 'PIURA' in prov or 'PIURA' in ue:
         return 'PIURA'
 
-    if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO':
+    if reg == 'PROVINCIA CONSTITUCIONAL DEL CALLAO' or 'CALLAO' in reg:
         return 'CALLAO'
+    
+    if 'LIMA' in reg:
+        return 'LIMA (GERENCIA GENERAL)'
 
     return reg
 
@@ -362,7 +344,7 @@ with tab_dash:
         """, unsafe_allow_html=True)
 
         # =========================================================
-        # MAPA NACIONAL
+        # MAPA NACIONAL BLINDADO
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
@@ -374,12 +356,10 @@ with tab_dash:
             
             df_base['Avance_Para_Promedio'] = df_base['Avance_%'].clip(upper=125)
 
-            # --- Para las regiones centralizadas: un solo punto en Lima con el PROMEDIO GENERAL ---
+            # --- Regiones Centralizadas ---
             df_centralizadas = df_base[df_base['Region_Filtro'].isin(REGIONES_CENTRALIZADAS)].copy()
             if len(df_centralizadas) > 0:
-                df_centralizadas_mapa = df_centralizadas.groupby('Region_Filtro').agg({
-                    'Avance_Para_Promedio': 'mean'
-                }).reset_index()
+                df_centralizadas_mapa = df_centralizadas.groupby('Region_Filtro').agg({'Avance_Para_Promedio': 'mean'}).reset_index()
                 df_centralizadas_mapa.rename(columns={'Avance_Para_Promedio': 'Avance_%'}, inplace=True)
                 df_centralizadas_mapa['Latitud'] = -12.0464
                 df_centralizadas_mapa['Longitud'] = -77.0428
@@ -388,32 +368,49 @@ with tab_dash:
             else:
                 df_centralizadas_mapa = pd.DataFrame(columns=['Region_Filtro','Avance_%','Latitud','Longitud','Texto_Region','Departamento_Real'])
 
-            # --- Resto de regiones: se agrupan por Departamento_Real ---
+            # --- Resto de regiones ---
             df_resto = df_base[~df_base['Region_Filtro'].isin(REGIONES_CENTRALIZADAS)].copy()
-            df_mapa_resto = df_resto.groupby(['Region_Filtro', 'Departamento_Real']).agg({
-                'Avance_Para_Promedio': 'mean'
-            }).reset_index()
+            df_mapa_resto = df_resto.groupby(['Region_Filtro', 'Departamento_Real']).agg({'Avance_Para_Promedio': 'mean'}).reset_index()
             df_mapa_resto.rename(columns={'Avance_Para_Promedio': 'Avance_%'}, inplace=True)
 
+            # FUNCIÓN ROBUSTA DE COORDENADAS PARA EVITAR EL BUG DE LA SELVA
             def obtener_coords(row):
-                reg = row['Region_Filtro']
-                depto = str(row['Departamento_Real']).upper().strip()
+                reg = str(row.get('Region_Filtro', '')).upper().strip()
+                depto = str(row.get('Departamento_Real', '')).upper().strip()
                 
-                if reg == 'SULLANA':
-                    return -4.90, -80.68
-                if reg == 'PIURA':
-                    return -5.19, -80.63
+                # 1. Fuerza bruta a las entidades con nombre específico
+                if reg == 'SULLANA' or 'SULLANA' in reg: return -4.90, -80.68
+                if reg == 'PIURA' or 'PIURA' in reg: return -5.19, -80.63
+                if 'CALLAO' in reg or 'CALLAO' in depto: return -12.0566, -77.1181
+                if 'LIMA' in reg: return -12.0464, -77.0428
                 
+                # 2. Búsqueda exacta en el diccionario por Departamento
                 if depto in COORDENADAS_PERU:
                     return COORDENADAS_PERU[depto][0], COORDENADAS_PERU[depto][1]
                 
-                return -9.19, -75.0152
+                # 3. Búsqueda exacta en el diccionario por Región
+                if reg in COORDENADAS_PERU:
+                    return COORDENADAS_PERU[reg][0], COORDENADAS_PERU[reg][1]
+                
+                # 4. Búsqueda parcial (por si viene con espacios como 'ANCASH ' o 'PASCO ')
+                for key, coords in COORDENADAS_PERU.items():
+                    if key in depto or key in reg:
+                        return coords[0], coords[1]
+                
+                # 5. Si todo falla, en vez de enviarlos a la selva, los mandamos a Lima (Sede central)
+                return -12.0464, -77.0428
 
             if len(df_mapa_resto) > 0:
                 coords = df_mapa_resto.apply(obtener_coords, axis=1, result_type='expand')
                 df_mapa_resto['Latitud'] = coords[0]
                 df_mapa_resto['Longitud'] = coords[1]
-                df_mapa_resto['Texto_Region'] = df_mapa_resto['Region_Filtro']
+                
+                # Limpiar texto para el mapa
+                def limpiar_texto(nombre):
+                    if nombre == 'LIMA (GERENCIA GENERAL)': return 'GERENCIA GENERAL'
+                    return nombre
+                
+                df_mapa_resto['Texto_Region'] = df_mapa_resto['Region_Filtro'].apply(limpiar_texto)
 
             # Unir todo
             df_mapa = pd.concat([df_mapa_resto, df_centralizadas_mapa], ignore_index=True)
@@ -421,16 +418,16 @@ with tab_dash:
 
             config_mapa = {'scrollZoom': False, 'doubleClick': False, 'displayModeBar': False}
 
-            # --- MAPA: ventana compacta (500px) para que TODO el Perú se vea sin scroll vertical ---
+            # --- MAPA: ventana compacta y encuadrada ---
             try:
                 fig = px.scatter_map(
                     df_mapa, lat="Latitud", lon="Longitud", 
                     text="Texto_Region", hover_name="Texto_Region", 
                     hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Departamento_Real": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.0, center={"lat": -9.5, "lon": -75.0}
+                    zoom=4.5, center={"lat": -9.3, "lon": -75.0} # Zoom y centro perfeccionados para Perú
                 )
-                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
+                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=11, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     map_style="open-street-map", 
                     showlegend=False, 
@@ -443,9 +440,9 @@ with tab_dash:
                     text="Texto_Region", hover_name="Texto_Region", 
                     hover_data={"Avance_%": ':.1f', "Region_Filtro": False, "Departamento_Real": False, "Latitud": False, "Longitud": False, "Color": False, "Texto_Region": False},
                     color="Color", color_discrete_map={'green': '#00cc66', 'orange': '#ffaa00', 'red': '#ff3333', 'purple': '#9333ea'},
-                    zoom=4.0, center={"lat": -9.5, "lon": -75.0}
+                    zoom=4.5, center={"lat": -9.3, "lon": -75.0}
                 )
-                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=10, color='black', family="Arial", weight="bold"))
+                fig.update_traces(marker=dict(size=12, opacity=0.9), textposition='top right', textfont=dict(size=11, color='black', family="Arial", weight="bold"))
                 fig.update_layout(
                     mapbox_style="open-street-map", 
                     showlegend=False, 
@@ -481,12 +478,10 @@ with tab_dash:
             if ue_sel != "Todas":
                 df_region = df_region[df_region['UE'] == ue_sel]
 
-            # Detectar columna UBIGEO
             col_ubigeo = obtener_columna_ubigeo(df_region)
 
             df_problemas = df_region[(df_region['Estado_Semaforo'].str.contains('Rojo')) | (df_region['Estado_Semaforo'].str.contains('Morado')) | (df_region['Alerta_Critica_3M'] == '🚨 SÍ')]
             
-            # ============ TABLA 1: CRÍTICOS (con UBIGEO) ============
             cols_mostrar = ['UE', 'Centro de Costo']
             if col_ubigeo:
                 cols_mostrar.append(col_ubigeo)
@@ -501,7 +496,6 @@ with tab_dash:
             
             nombres_meses_cortos = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
             
-            # ============ TABLA 2: SEGUIMIENTO (con UBIGEO) ============
             base_cols = ['UE', 'Centro de Costo']
             if col_ubigeo:
                 base_cols.append(col_ubigeo)
@@ -533,7 +527,6 @@ with tab_dash:
 
             st.dataframe(df_seguimiento.reset_index(drop=True), use_container_width=True, height=500)
             
-            # ============ TABLA 3: SABANA COMPLETA (con UBIGEO) ============
             df_region_completa = df_region[cols_mostrar].rename(columns={'Alerta_Critica_3M': 'Alerta Crítica (3+ meses)'})
             with st.expander("Ver sabana completa"):
                 st.dataframe(df_region_completa.reset_index(drop=True), use_container_width=True, height=500)
