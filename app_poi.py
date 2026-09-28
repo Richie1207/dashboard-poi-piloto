@@ -336,7 +336,7 @@ with tab_dash:
         """, unsafe_allow_html=True)
 
         # =========================================================
-        # MAPA NACIONAL (AGRUPACIÓN EXACTA)
+        # MAPA NACIONAL (AGRUPACIÓN EXACTA CON SEPARACIÓN VISUAL)
         # =========================================================
         if st.session_state.region_seleccionada is None:
             opciones_regiones = ["-- Seleccione una región --"] + sorted([r for r in df_base['Region_Filtro'].dropna().unique()])
@@ -356,12 +356,12 @@ with tab_dash:
             def obtener_coords(reg_nombre):
                 reg = str(reg_nombre).upper().strip()
                 
-                # Desplazamiento fino en Lima para que las entidades no se superpongan
-                if reg == 'LIMA (GERENCIA GENERAL)': return -12.0464, -77.0428  # Lima Centro
-                if reg == 'CALLAO': return -12.0566, -77.1181                   # Oeste (Callao)
-                if reg == 'CARPETA FISCAL': return -11.9800, -76.9900           # Noreste (SJL)
-                if reg == 'IML (MEDICINA LEGAL)': return -12.1000, -77.0100     # Sur (Surquillo/San Borja)
-                if reg == 'ANC (AUTORIDAD NACIONAL)': return -12.0800, -77.0700 # Suroeste (Magdalena)
+                # Desplazamiento EXAGERADO en Lima para evitar solapamiento a nivel nacional (Zoom 4.5)
+                if reg == 'LIMA (GERENCIA GENERAL)': return -12.0500, -77.0500  # Centro exacto
+                if reg == 'CALLAO': return -12.0500, -77.5500                   # Pegado al mar (Oeste)
+                if reg == 'CARPETA FISCAL': return -11.5500, -77.0500           # Desplazado al Norte
+                if reg == 'IML (MEDICINA LEGAL)': return -12.5500, -77.0500     # Desplazado al Sur
+                if reg == 'ANC (AUTORIDAD NACIONAL)': return -12.0500, -76.5500 # Desplazado al Este
                 
                 # Norte
                 if reg == 'SULLANA': return -4.9000, -80.6800
@@ -376,8 +376,8 @@ with tab_dash:
                     if key in reg:
                         return coords[0], coords[1]
                 
-                # Fallback extremo al centro si algo sale mal (ya no irá a la selva)
-                return -12.0464, -77.0428
+                # Fallback central
+                return -12.0500, -77.0500
 
             coords_lista = df_mapa['Region_Filtro'].apply(obtener_coords).tolist()
             df_mapa['Latitud'] = [c[0] for c in coords_lista]
